@@ -70,11 +70,12 @@ class CoachResponseMapperTests {
 			ResumeScoreRewriteDraft("Experience", "API. Cut", "Improved the API and cut costs."),
 			ResumeScoreRewriteDraft("Experience", "  ", "An improved line with no source."),
 			ResumeScoreRewriteDraft("Experience", "Led a team of 40.", "Led a team of [N]."),
+			ResumeScoreRewriteDraft("Experience", "&lt;DataTable> migration", "Migrated [N] screens to <DataTable>."),
 		))
 
-		val rewrites = mapper.normalizeResumeScore(draft, "EXPERIENCE\n  - Built the payment\tAPI.  \nCut  costs.", null).rewrites
+		val rewrites = mapper.normalizeResumeScore(draft, "EXPERIENCE\n  - Built the payment\tAPI.  \nCut  costs.\n<DataTable> migration", null).rewrites
 
-		assertThat(rewrites.map { it.original }).containsExactly("- Built   the payment API.", "Cut costs.")
+		assertThat(rewrites.map { it.original }).containsExactly("- Built   the payment API.", "Cut costs.", "<DataTable> migration")
 	}
 
 	@Test
