@@ -28,7 +28,7 @@ describe("mock API", () => {
   // The scenarios liveApi.test.ts also runs against a real API. Here every job finishes when the clock jumps.
   registerApiScenarios({ base: "", settle: async () => finishJobs() });
 
-  // The rest need fake-only controls (store uploads, forced failures, the clock, storage) or an empty database.
+  // The rest need mock-only controls (store uploads, forced failures, the clock, storage) or an empty database.
 
   // Upload rules are tested on the store: jsdom's File loses its name inside the fetch FormData, so multipart
   // parsing in the handler is covered by the browser smoke run instead.
