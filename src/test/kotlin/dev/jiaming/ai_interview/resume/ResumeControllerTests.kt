@@ -19,7 +19,6 @@ import org.mockito.Mockito
 import org.springframework.mock.web.MockMultipartFile
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
-import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -37,9 +36,7 @@ class ResumeControllerTests {
 	private val scoreService = Mockito.mock(ResumeScoreService::class.java)
 	private val guard = RedisRequestGuard(StringRedisTemplate(), RedisUsageProperties("resume-controller-test:",
 		RedisUsageProperties.RateLimit(false, 60, 12, 20), RedisUsageProperties.Idempotency(false, 86_400)), ObjectMapper())
-	// Spring Boot 4 registers only the Jackson 3 converter; the default standalone setup would hide a body it cannot read.
-	private val mockMvc = standaloneSetup(ResumeController(submissionService, libraryService, scoreService, guard))
-		.setMessageConverters(JacksonJsonHttpMessageConverter()).build()
+	private val mockMvc = standaloneSetup(ResumeController(submissionService, libraryService, scoreService, guard)).build()
 
 	@Test
 	fun uploadsResumeAndReturnsAcceptedJob() {
