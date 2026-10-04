@@ -36,6 +36,41 @@ class VoiceSessionService(
 ) {
     fun get(sessionId: UUID): VoiceSessionView = find(localUserService.localUserId(), sessionId)?.view ?: notFound()
 
+    /** Atomically spends one of the session's twelve Live token attempts before the external provider call. */
+    fun reserveToken(sessionId: UUID, questionId: UUID): VoiceTokenReservation {
+        jobSubmissionService.assertApiAvailable()
+        val userId = localUserService.localUserId()
+        return inTransaction {
+            jdbcTemplate.lockOwnerShared(userId)
+            val session = find(userId, sessionId, lock = true) ?: notFound()
+            if (session.view.status == VoiceSessionStatus.EXPIRED) {
+                throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_SESSION_EXPIRED", "The interview draft expired")
+            }
+            if (session.view.status != VoiceSessionStatus.DRAFT) {
+                throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_SESSION_NOT_DRAFT", "Only an unsaved interview can start a connection")
+            }
+            val question = session.view.questions.firstOrNull { it.id == questionId }
+                ?: throw ApiRequestException(HttpStatus.NOT_FOUND, "VOICE_QUESTION_NOT_FOUND", "Interview question was not found")
+            val (mintCount, runActive) = jdbcTemplate.query(
+                "SELECT token_mint_count, run_deadline > now() AS run_active FROM ai_interview_app.voice_sessions WHERE id = ? AND user_id = ? FOR UPDATE",
+                RowMapper { rs, _ -> rs.getInt("token_mint_count") to rs.getBoolean("run_active") },
+                sessionId, userId,
+            ).firstOrNull() ?: notFound()
+            if (!runActive) {
+                throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_RUN_EXPIRED", "The interview run has ended")
+            }
+            if (mintCount >= MAX_TOKEN_MINTS) {
+                throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_TOKEN_BUDGET_EXHAUSTED", "This interview has reached its connection limit")
+            }
+            val updated = jdbcTemplate.update(
+                "UPDATE ai_interview_app.voice_sessions SET token_mint_count = token_mint_count + 1 WHERE id = ? AND user_id = ? AND saved_at IS NULL AND run_deadline > now() AND token_mint_count < ?",
+                sessionId, userId, MAX_TOKEN_MINTS,
+            )
+            if (updated != 1) throw IllegalStateException("Voice token reservation changed while its session row was locked")
+            VoiceTokenReservation(question, session.view.runDeadline)
+        }
+    }
+
     /** Worker read bound to the claimed job owner, not the request-time local-user shortcut. */
     internal fun getForReport(userId: UUID, sessionId: UUID): VoiceSessionView =
         find(userId, sessionId)?.view ?: throw IllegalStateException("Voice report session $sessionId was not found for its job owner")
@@ -336,6 +371,7 @@ class VoiceSessionService(
 
     companion object {
         const val MAX_QUESTIONS = 6
+        const val MAX_TOKEN_MINTS = 12
         const val MAX_ANSWER_LENGTH = 4_000
         const val MAX_TRANSCRIPT_BYTES = 64 * 1024
         val RUN_LIMIT: Duration = Duration.ofMinutes(20)

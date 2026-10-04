@@ -36,6 +36,18 @@ data class VoiceAnswer(val questionId: UUID, val interviewerText: String, val an
 /** [replayed] is true when an identical Save was already committed and this call returned it. */
 data class VoiceSaveResult(val session: VoiceSessionView, val replayed: Boolean)
 
+/** Canonical question and run deadline reserved before contacting Gemini; each attempt consumes one DB slot. */
+data class VoiceTokenReservation(val question: VoiceQuestion, val runDeadline: Instant)
+
+/** Short-lived credential response. This value is never stored. */
+data class VoiceTokenResponse(
+    val token: String,
+    val model: String,
+    val apiVersion: String,
+    val expiresAt: Instant,
+    val newSessionExpiresAt: Instant,
+)
+
 /** The report job's input. Its resource is the session; the transcript stays on the session row (R10). */
 @JvmRecord
 data class VoiceReportPayload(

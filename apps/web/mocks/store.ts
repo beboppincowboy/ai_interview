@@ -135,7 +135,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       createdAt: now(),
       queuedMs,
       stageMs,
-      refs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null, ...refs },
+      refs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null, voiceSessionId: null, ...refs },
       fail: db.failNext[type] ?? null,
       applied: false,
       result: null,

@@ -3,6 +3,8 @@ package dev.jiaming.ai_interview.voice
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.json.JsonMapper
+import com.sun.net.httpserver.HttpServer
+import dev.jiaming.ai_interview.common.ApiErrorResponse
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.ContentHasher
 import dev.jiaming.ai_interview.common.DeleteImpactService
@@ -49,6 +51,8 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.time.Duration
+import java.net.InetSocketAddress
+import java.net.URI
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
@@ -86,6 +90,78 @@ class VoiceSessionIntegrationTests {
         assertThat(count("answer_attempts")).isZero()
         assertThat(count("background_jobs")).isZero()
         Mockito.verify(guard, Mockito.never()).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
+    }
+
+    @Test
+    fun tokenMintReservationsAreOwnedCanonicalBoundedAndAtomicUnderConcurrency() {
+        val session = voice.create(readySet().id)
+        val question = session.questions.first()
+
+        expectCode("VOICE_QUESTION_NOT_FOUND") { voice.reserveToken(session.id, UUID.randomUUID()) }
+        assertThat(jdbc.queryForObject("SELECT token_mint_count FROM ai_interview_app.voice_sessions WHERE id = ?", Int::class.java, session.id))
+            .isZero()
+
+        val results = concurrently(16) { runCatching { voice.reserveToken(session.id, question.id) } }
+        val accepted = results.mapNotNull { it.getOrNull() }
+        val rejected = results.mapNotNull { it.exceptionOrNull() as? ApiRequestException }
+        assertThat(accepted).hasSize(12).allSatisfy {
+            assertThat(it.question).isEqualTo(question)
+            assertThat(it.runDeadline).isEqualTo(session.runDeadline)
+        }
+        assertThat(rejected).hasSize(4).allSatisfy { assertThat(it.code()).isEqualTo("VOICE_TOKEN_BUDGET_EXHAUSTED") }
+        assertThat(jdbc.queryForObject("SELECT token_mint_count FROM ai_interview_app.voice_sessions WHERE id = ?", Int::class.java, session.id))
+            .isEqualTo(12)
+
+        val expired = voice.create(readySet().id)
+        age(expired.id, Duration.ofMinutes(21))
+        expectCode("VOICE_RUN_EXPIRED") { voice.reserveToken(expired.id, expired.questions.first().id) }
+        assertThat(jdbc.queryForObject("SELECT token_mint_count FROM ai_interview_app.voice_sessions WHERE id = ?", Int::class.java, expired.id))
+            .isZero()
+
+        val saved = voice.create(readySet().id)
+        voice.save(saved.id, transcript(saved, "A reviewed answer"))
+        expectCode("VOICE_SESSION_NOT_DRAFT") { voice.reserveToken(saved.id, saved.questions.first().id) }
+        assertThat(jdbc.queryForObject("SELECT token_mint_count FROM ai_interview_app.voice_sessions WHERE id = ?", Int::class.java, saved.id))
+            .isZero()
+
+        val foreignOwner = insertUser()
+        val foreignSession = insertSession(readySet(user = foreignOwner), foreignOwner)
+        expectCode("VOICE_SESSION_NOT_FOUND") { voice.reserveToken(foreignSession, UUID.randomUUID()) }
+        assertThat(jdbc.queryForObject("SELECT token_mint_count FROM ai_interview_app.voice_sessions WHERE id = ?", Int::class.java, foreignSession))
+            .isZero()
+    }
+
+    @Test
+    fun providerFailureAfterTheCommittedReservationConsumesOneMintSlot() {
+        val session = voice.create(readySet().id)
+        val properties = VoiceProperties(true, null, null, null, "server-only-key")
+        val providerCalls = java.util.concurrent.atomic.AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+            createContext("/") { exchange ->
+                providerCalls.incrementAndGet()
+                exchange.requestBody.close()
+                val body = "provider-secret-marker".toByteArray()
+                exchange.sendResponseHeaders(503, body.size.toLong())
+                exchange.responseBody.use { it.write(body) }
+            }
+            start()
+        }
+        try {
+            val tokenClient = GeminiLiveTokenClient(mapper, properties, URI("http://127.0.0.1:${server.address.port}"))
+            val controller = VoiceController(voice, tokenClient, properties)
+            val response = controller.mint(session.id, VoiceTokenRequest(session.questions.first().id))
+
+            assertThat(response.statusCode.value()).isEqualTo(502)
+            assertThat(response.headers.getFirst("Cache-Control")).contains("no-store")
+            assertThat(response.body).isInstanceOf(ApiErrorResponse::class.java)
+            assertThat((response.body as ApiErrorResponse).code).isEqualTo("VOICE_TOKEN_UNAVAILABLE")
+            assertThat(response.body.toString()).doesNotContain("provider-secret-marker", "server-only-key")
+            assertThat(providerCalls.get()).isEqualTo(1)
+            assertThat(jdbc.queryForObject("SELECT token_mint_count FROM ai_interview_app.voice_sessions WHERE id = ?", Int::class.java, session.id))
+                .isEqualTo(1)
+        } finally {
+            server.stop(0)
+        }
     }
 
     @Test
