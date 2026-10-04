@@ -143,7 +143,7 @@ class SupabaseMigrationIntegrationTests {
                     buildList { while (result.next()) add(result.getString(1)) }
                 }
             }
-            assertThat(versions).containsExactly(*(1..18).map(Int::toString).toTypedArray())
+            assertThat(versions).containsExactly(*(1..19).map(Int::toString).toTypedArray())
             connection.createStatement().use { statement ->
                 statement.executeQuery("SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'public.vector_store'::regclass AND attname = 'embedding'").use { result ->
                     result.next(); assertThat(result.getString(1)).isEqualTo("vector(1024)")
@@ -359,8 +359,8 @@ class SupabaseMigrationIntegrationTests {
             .withUsername("ai_interview")
             .withPassword("ai_interview")
 
-        // Private tables added for the frontend contract (V10-V17): runtime-only, never Data API readable.
+        // Private tables added for the frontend contract (V10-V19): runtime-only, never Data API readable.
         val FRONTEND_TABLES = listOf("storage_cleanup", "resume_scores", "job_fits", "experience_suggestions",
-            "practice_sets", "practice_questions", "answer_attempts")
+            "practice_sets", "practice_questions", "answer_attempts", "voice_sessions")
     }
 }

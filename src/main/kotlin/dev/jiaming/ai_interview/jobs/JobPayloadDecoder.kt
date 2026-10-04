@@ -9,6 +9,7 @@ import dev.jiaming.ai_interview.practice.PracticeQuestionsPayload
 import dev.jiaming.ai_interview.resume.ResumeExtractionJobPayload
 import dev.jiaming.ai_interview.score.ResumeScorePayload
 import dev.jiaming.ai_interview.suggestions.ExperienceSuggestionsPayload
+import dev.jiaming.ai_interview.voice.VoiceReportPayload
 
 @Component
 class JobPayloadDecoder(private val objectMapper: ObjectMapper) {
@@ -51,6 +52,10 @@ class JobPayloadDecoder(private val objectMapper: ObjectMapper) {
             JobType.PRACTICE_QUESTIONS -> {
                 require(isCurrent(job.requestPayload, PracticeQuestionsPayload.CURRENT_VERSION)) { "Invalid PracticeQuestionsPayload job payload" }
                 convert(job.requestPayload, PracticeQuestionsPayload::class.java)
+            }
+            JobType.VOICE_REPORT -> {
+                require(isCurrent(job.requestPayload, VoiceReportPayload.CURRENT_VERSION)) { "Invalid VoiceReportPayload job payload" }
+                convert(job.requestPayload, VoiceReportPayload::class.java)
             }
         }
         require(payloadType.isInstance(payload)) { "Decoded payload for ${job.jobType} is not ${payloadType.simpleName}" }

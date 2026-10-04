@@ -7,9 +7,9 @@ import org.junit.jupiter.api.Test
 
 class JobHandlerRegistryTests {
 	@Test
-	fun startsWithExactlyTheSevenContractJobTypes() {
+	fun startsWithExactlyTheEightContractJobTypes() {
 		val types = listOf("RESUME_EXTRACTION", "RESUME_SCORE", "JOB_FIT", "EXPERIENCE_SUGGESTIONS", "PRACTICE_QUESTIONS",
-			"EXPERIENCE_SPLIT", "ANSWER_FEEDBACK").map(JobType::valueOf)
+			"EXPERIENCE_SPLIT", "ANSWER_FEEDBACK", "VOICE_REPORT").map(JobType::valueOf)
 		val handlers = types.map(::handler)
 		val registry = JobHandlerRegistry(handlers)
 		types.zip(handlers).forEach { (type, handler) -> assertThat(registry.require(type)).isSameAs(handler) }
