@@ -11,3 +11,6 @@ export function parseMockMode(value: string | undefined, isProd: boolean): MockM
   if (value === "all" || value === "off") return value;
   return isProd ? "off" : "all";
 }
+
+/** Spoken interviews are a default-off local development feature; only local Compose builds set the flag (KTD2). */
+export const VOICE_ENABLED = import.meta.env.VITE_VOICE_ENABLED === "true";

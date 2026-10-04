@@ -97,6 +97,12 @@ app:
     rrf-k: ${RAG_RRF_K:15}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
     chunk-schema: ${RAG_CHUNK_SCHEMA:section-block-v3}
+  voice:
+    enabled: ${VOICE_ENABLED:false}
+    model: ${VOICE_MODEL:gemini-3.8-live}
+    api-version: ${VOICE_API_VERSION:v1alpha}
+    silence-ms: ${VOICE_SILENCE_MS:4500}
+    api-key: ${GEMINI_API_KEY:}
   redis:
     key-prefix: ${REDIS_KEY_PREFIX:ai-interview:v3:}
     rate-limit:
