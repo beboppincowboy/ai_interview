@@ -69,11 +69,13 @@ const OPTIONAL_ARRAY_FIELDS: Record<string, string[]> = {
 
 const sameFields = (a: string[], b: string[]) => a.length === b.length && a.every((field, index) => field === b[index]);
 
-/** Key paths of a JSON value. A list contributes its first item, as `path[]`. */
-export function shapeOf(value: unknown, path = ""): string[] {
+/** Key paths of a JSON value. A list contributes its first item, as `path[]`. `populated` collects declared optional
+ * arrays that arrived with items, so a run can tell real item shapes from the declared fallback. */
+export function shapeOf(value: unknown, path = "", populated?: Set<string>): string[] {
   if (Array.isArray(value)) {
     const declaredFields = OPTIONAL_ARRAY_FIELDS[path];
     if (declaredFields) {
+      if (value.length) populated?.add(path);
       const expected = declaredFields.map((field) => `${path}[].${field}`).sort();
       for (const item of value) {
         const observed = shapeOf(item, `${path}[]`).sort();
@@ -83,18 +85,18 @@ export function shapeOf(value: unknown, path = ""): string[] {
       }
       return expected;
     }
-    return value.length ? shapeOf(value[0], `${path}[]`) : [];
+    return value.length ? shapeOf(value[0], `${path}[]`, populated) : [];
   }
   if (value === null || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, child]) => {
     const childPath = path ? `${path}.${key}` : key;
-    return [childPath, ...shapeOf(child, childPath)];
+    return [childPath, ...shapeOf(child, childPath, populated)];
   });
 }
 
 /** Records a response shape under its scenario label. */
-export function recordShape<T>(shapes: Record<string, string[]>, name: string, body: T): T {
-  const shape = shapeOf(body).sort();
+export function recordShape<T>(shapes: Record<string, string[]>, name: string, body: T, populated?: Set<string>): T {
+  const shape = shapeOf(body, "", populated).sort();
   const previous = shapes[name];
   if (previous) {
     if (!sameFields(previous, shape)) {
@@ -119,7 +121,8 @@ const ids = (items: { id: string }[]) => items.map((item) => item.id);
 /** Registers the shared scenarios, then one test comparing every recorded shape with tests/apiShapes.json. */
 export function registerApiScenarios({ base, settle }: ApiTarget) {
   const shapes: Record<string, string[]> = {};
-  const record = <T,>(name: string, body: T) => recordShape(shapes, name, body);
+  const populated = new Set<string>();
+  const record = <T,>(name: string, body: T) => recordShape(shapes, name, body, populated);
 
   const paste = async (name: string, text = resumeText()) => record("POST /api/resumes/paste (new)",
     await post<ResumeCreated>(`${base}/api/resumes/paste`, { name, jobTitle: null, text })).resume;
@@ -143,7 +146,9 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
 
   it("previews and cascades a resume delete", async () => {
     const resume = await paste("Backend");
-    const other = await paste("Other");
+    // Evidence the selected resume lacks, so a real model has a strong match and returns suggestion items.
+    const other = await paste("Other", resumeText().replace("Worked on backend services.",
+      "Built Kafka event streaming pipelines and deployed them on Kubernetes."));
     const job = await targetJob();
     const pair = (resumeId: string) => `${base}/api/resumes/${resumeId}/target-jobs/${job.id}`;
     const score = record("POST /api/resumes/{id}/score", await post<JobAccepted>(`${base}/api/resumes/${resume.id}/score`));
@@ -235,6 +240,8 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
   // Runs last, after every scenario above has recorded its shapes. The mock API run writes the file when it is missing;
   // `npm test -u` rewrites it after an intended contract change.
   it("answers with the response shapes in apiShapes.json", async () => {
+    // An empty declared array records its declared fields, not the API's, so a real API must fill each one at least once.
+    if (base) expect([...populated].sort()).toEqual(Object.keys(OPTIONAL_ARRAY_FIELDS).sort());
     await expect(`${JSON.stringify(shapes, null, 2)}\n`).toMatchFileSnapshot("./apiShapes.json");
   });
 }
