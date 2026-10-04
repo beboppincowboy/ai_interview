@@ -1,6 +1,5 @@
 // Opt-in, so CI never needs an AI key or pays for provider calls: runs the shared scenarios against a real API only
-// when LIVE_API_URL names it, for example
-// LIVE_API_URL=http://127.0.0.1:3000 npm test -- liveApi with the Compose app profile running. Never runs in CI.
+// when LIVE_API_URL names it. The README has the command.
 import { describe } from "vitest";
 import { pollJobs, registerApiScenarios } from "./apiScenarios";
 

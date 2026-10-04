@@ -1,4 +1,4 @@
-// API scenarios shared by the MSW fake (mocks.test.ts) and a real API (liveApi.test.ts, opt-in).
+// API scenarios shared by the mock API (mocks.test.ts) and a real API (liveApi.test.ts, opt-in).
 // They hold on a persistent, shared database: every pasted text is unique, and lists are checked for what they contain
 // or omit rather than compared whole. Every response they read is recorded as a shape and compared with one committed
 // file, so a field that one side renames or drops fails the run against that side.
@@ -10,7 +10,7 @@ import type {
 } from "@/lib/api/types";
 
 export type ApiTarget = {
-  /** Prefix for every request path: empty for the fake, an origin such as http://127.0.0.1:3000 for a real API. */
+  /** Prefix for every request path: empty for the mock API, an origin such as http://127.0.0.1:3000 for a real API. */
   base: string;
   /** Resolves once every listed job has finished. */
   settle: (jobIds: string[]) => Promise<void>;
@@ -67,35 +67,39 @@ const OPTIONAL_ARRAY_FIELDS: Record<string, string[]> = {
   "result.rewrites": ["original", "placeholders", "rewritten", "section"]
 };
 
-/** Key paths of a JSON value. A list contributes its first item, as `path[]`. */
-export function shapeOf(value: unknown, path = ""): string[] {
+const sameFields = (a: string[], b: string[]) => a.length === b.length && a.every((field, index) => field === b[index]);
+
+/** Key paths of a JSON value. A list contributes its first item, as `path[]`. `populated` collects declared optional
+ * arrays that arrived with items, so a run can tell real item shapes from the declared fallback. */
+export function shapeOf(value: unknown, path = "", populated?: Set<string>): string[] {
   if (Array.isArray(value)) {
     const declaredFields = OPTIONAL_ARRAY_FIELDS[path];
     if (declaredFields) {
+      if (value.length) populated?.add(path);
       const expected = declaredFields.map((field) => `${path}[].${field}`).sort();
       for (const item of value) {
         const observed = shapeOf(item, `${path}[]`).sort();
-        if (observed.length !== expected.length || observed.some((field, index) => field !== expected[index])) {
+        if (!sameFields(observed, expected)) {
           throw new Error(`Unexpected item shape at ${path}: expected ${expected.join(", ")}; got ${observed.join(", ")}`);
         }
       }
       return expected;
     }
-    return value.length ? shapeOf(value[0], `${path}[]`) : [];
+    return value.length ? shapeOf(value[0], `${path}[]`, populated) : [];
   }
   if (value === null || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, child]) => {
     const childPath = path ? `${path}.${key}` : key;
-    return [childPath, ...shapeOf(child, childPath)];
+    return [childPath, ...shapeOf(child, childPath, populated)];
   });
 }
 
 /** Records a response shape under its scenario label. */
-export function recordShape<T>(shapes: Record<string, string[]>, name: string, body: T): T {
-  const shape = shapeOf(body).sort();
+export function recordShape<T>(shapes: Record<string, string[]>, name: string, body: T, populated?: Set<string>): T {
+  const shape = shapeOf(body, "", populated).sort();
   const previous = shapes[name];
   if (previous) {
-    if (previous.length !== shape.length || previous.some((field, index) => field !== shape[index])) {
+    if (!sameFields(previous, shape)) {
       throw new Error(`Response shape changed between occurrences of ${name}`);
     }
   } else {
@@ -117,7 +121,8 @@ const ids = (items: { id: string }[]) => items.map((item) => item.id);
 /** Registers the shared scenarios, then one test comparing every recorded shape with tests/apiShapes.json. */
 export function registerApiScenarios({ base, settle }: ApiTarget) {
   const shapes: Record<string, string[]> = {};
-  const record = <T,>(name: string, body: T) => recordShape(shapes, name, body);
+  const populated = new Set<string>();
+  const record = <T,>(name: string, body: T) => recordShape(shapes, name, body, populated);
 
   const paste = async (name: string, text = resumeText()) => record("POST /api/resumes/paste (new)",
     await post<ResumeCreated>(`${base}/api/resumes/paste`, { name, jobTitle: null, text })).resume;
@@ -141,7 +146,9 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
 
   it("previews and cascades a resume delete", async () => {
     const resume = await paste("Backend");
-    const other = await paste("Other");
+    // Evidence the selected resume lacks, so a real model has a strong match and returns suggestion items.
+    const other = await paste("Other", resumeText().replace("Worked on backend services.",
+      "Built Kafka event streaming pipelines and deployed them on Kubernetes."));
     const job = await targetJob();
     const pair = (resumeId: string) => `${base}/api/resumes/${resumeId}/target-jobs/${job.id}`;
     const score = record("POST /api/resumes/{id}/score", await post<JobAccepted>(`${base}/api/resumes/${resume.id}/score`));
@@ -176,7 +183,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(ids(history.resumes)).not.toContain(resume.id);
     expect(ids(history.practiceSets)).not.toContain(set.id);
     if (!base) {
-      // The fake starts empty for each test, so it can still be held to the exact lists.
+      // The mock API starts empty for each test, so it can still be held to the exact lists.
       expect(ids(history.resumes)).toEqual([other.id]);
       expect(history.practiceSets).toEqual([]);
     }
@@ -230,9 +237,11 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(updated.latestScore?.stale).toBe(true);
   });
 
-  // Runs last, after every scenario above has recorded its shapes. The fake run writes the file when it is missing;
+  // Runs last, after every scenario above has recorded its shapes. The mock API run writes the file when it is missing;
   // `npm test -u` rewrites it after an intended contract change.
   it("answers with the response shapes in apiShapes.json", async () => {
+    // An empty declared array records its declared fields, not the API's, so a real API must fill each one at least once.
+    if (base) expect([...populated].sort()).toEqual(Object.keys(OPTIONAL_ARRAY_FIELDS).sort());
     await expect(`${JSON.stringify(shapes, null, 2)}\n`).toMatchFileSnapshot("./apiShapes.json");
   });
 }

@@ -38,6 +38,12 @@ it("retains declared paths for optional AI result arrays when empty", () => {
   expect(shapeOf({ result: { items: [], rewrites: [] } }).sort()).toEqual(optionalResultPaths);
 });
 
+it("reports which optional AI result arrays arrived with items", () => {
+  const populated = new Set<string>();
+  shapeOf({ result: { items: [suggestion], rewrites: [] } }, "", populated);
+  expect([...populated]).toEqual(["result.items"]);
+});
+
 it("records and validates nested fields in populated optional AI result arrays", () => {
   expect(shapeOf({ result: { items: [suggestion], rewrites: [rewrite] } }).sort()).toEqual(optionalResultPaths);
 
