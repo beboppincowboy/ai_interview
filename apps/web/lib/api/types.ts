@@ -103,6 +103,7 @@ export type DeleteImpact = {
   practiceSets: number;
   attempts: number;
   staleSuggestionSets: number;
+  voiceSessions: number;
 };
 
 export type Page<T> = { items: T[] };
@@ -276,6 +277,7 @@ export type AnswerFeedbackResult = {
 
 // §9 History
 export type History = {
+  voiceSessions: VoiceSessionHistory[];
   resumes: { id: string; name: string; scores: { overall: number; scoredAt: string }[] }[];
   targetJobs: {
     id: string;
@@ -291,4 +293,11 @@ export type History = {
     updatedAt: string;
     questions: { id: string; text: string; scores: number[] }[];
   }[];
+};
+
+export type VoiceSessionHistory = {
+  id: string; practiceSetId: string; resumeId: string; resumeName: string;
+  targetJobId: string; targetJobName: string; savedAt: string;
+  selectedCount: number; answeredCount: number; overallScore: number | null;
+  reportJobId: string; reportStatus: JobStatus;
 };

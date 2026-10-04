@@ -7,7 +7,12 @@ import java.util.UUID
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 
-@JvmRecord data class HistoryResponse(val resumes: List<ResumeHistory>, val targetJobs: List<TargetJobHistory>, val practiceSets: List<PracticeSetHistory>)
+@JvmRecord data class HistoryResponse(val resumes: List<ResumeHistory>, val targetJobs: List<TargetJobHistory>, val practiceSets: List<PracticeSetHistory>, val voiceSessions: List<VoiceSessionHistory> = emptyList())
+@JvmRecord data class VoiceSessionHistory(
+    val id: UUID, val practiceSetId: UUID, val resumeId: UUID, val resumeName: String,
+    val targetJobId: UUID, val targetJobName: String, val savedAt: Instant,
+    val selectedCount: Int, val answeredCount: Int, val overallScore: Int?, val reportJobId: UUID, val reportStatus: String,
+)
 @JvmRecord data class ResumeHistory(val id: UUID, val name: String, val scores: List<ScorePoint>)
 @JvmRecord data class ScorePoint(val overall: Int, val scoredAt: Instant)
 @JvmRecord data class TargetJobHistory(val id: UUID, val name: String, val fits: List<FitPoint>)
@@ -23,8 +28,31 @@ import org.springframework.stereotype.Service
 class HistoryService(private val jdbcTemplate: JdbcTemplate, private val localUserService: LocalUserService) {
     fun history(): HistoryResponse {
         val userId = localUserService.localUserId()
-        return HistoryResponse(resumes(userId), targetJobs(userId), practiceSets(userId))
+        return HistoryResponse(resumes(userId), targetJobs(userId), practiceSets(userId), voiceSessions(userId))
     }
+
+    private fun voiceSessions(userId: UUID): List<VoiceSessionHistory> = jdbcTemplate.query(
+        """
+            SELECT v.id, v.practice_set_id, v.resume_id, r.name AS resume_name, v.target_job_id,
+                   t.name AS target_job_name, v.saved_at, jsonb_array_length(v.questions) AS selected_count,
+                   (SELECT count(*) FROM jsonb_array_elements(v.transcript->'answers') a
+                    WHERE length(btrim(a->>'answerText')) > 0) AS answered_count,
+                   (v.report->>'overallScore')::int AS overall_score, v.report_job_id,
+                   CASE WHEN v.report IS NOT NULL THEN 'SUCCEEDED' ELSE coalesce(j.status, 'FAILED') END AS report_status
+            FROM ai_interview_app.voice_sessions v
+            JOIN ai_interview_app.resumes r ON r.id = v.resume_id AND r.user_id = v.user_id
+            JOIN ai_interview_app.job_descriptions t ON t.id = v.target_job_id AND t.user_id = v.user_id
+            LEFT JOIN ai_interview_app.background_jobs j ON j.id = v.report_job_id AND j.user_id = v.user_id
+            WHERE v.user_id = ? AND v.saved_at IS NOT NULL
+            ORDER BY v.saved_at DESC, v.id DESC
+        """.trimIndent(),
+        { rs, _ -> VoiceSessionHistory(
+            rs.uuid("id"), rs.uuid("practice_set_id"), rs.uuid("resume_id"), rs.getString("resume_name"),
+            rs.uuid("target_job_id"), rs.getString("target_job_name"), rs.getTimestamp("saved_at").toInstant(),
+            rs.getInt("selected_count"), rs.getInt("answered_count"), rs.getObject("overall_score", Int::class.javaObjectType),
+            rs.uuid("report_job_id"), rs.getString("report_status"),
+        ) }, userId,
+    )
 
     private fun resumes(userId: UUID) = grouped(
         """

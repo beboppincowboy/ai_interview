@@ -78,7 +78,8 @@ class TargetJobService(
             Int::class.java, targetJobId, userId
         ) ?: 0
         val attempts = countPracticeAttempts(jdbcTemplate, userId, "target_job_id", targetJobId)
-        return TargetJobDeleteImpact(fits = fits, suggestionSets = suggestionSets, practiceSets = practiceSets, attempts = attempts)
+        return TargetJobDeleteImpact(fits = fits, suggestionSets = suggestionSets, practiceSets = practiceSets, attempts = attempts,
+            voiceSessions = dev.jiaming.ai_interview.common.countSavedVoiceSessions(jdbcTemplate, userId, "target_job_id", targetJobId))
     }
 
     @Transactional
@@ -196,4 +197,5 @@ data class TargetJobDeleteImpact(
     val practiceSets: Int = 0,
     val attempts: Int = 0,
     val staleSuggestionSets: Int = 0,
+    val voiceSessions: Int = 0,
 )

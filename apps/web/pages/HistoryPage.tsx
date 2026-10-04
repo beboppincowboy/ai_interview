@@ -21,7 +21,7 @@ const rowClass = "flex flex-wrap items-center gap-4 rounded-lg border bg-card px
 export default function HistoryPage() {
   const history = useHistory();
   const data = history.data;
-  const empty = data && !data.resumes.some((resume) => resume.scores.length) && !data.targetJobs.some((job) => job.fits.length) && data.practiceSets.length === 0;
+  const empty = data && !data.resumes.some((resume) => resume.scores.length) && !data.targetJobs.some((job) => job.fits.length) && data.practiceSets.length === 0 && data.voiceSessions.length === 0;
 
   return (
     <>
@@ -37,6 +37,17 @@ export default function HistoryPage() {
       ) : null}
       {data && !empty ? (
         <div className="space-y-10">
+          <Section title="Spoken interviews">
+            {data.voiceSessions.map((session) => (
+              <li key={session.id}>
+                <Link to="/voice/sessions/$sessionId" params={{ sessionId: session.id }} className={rowClass}>
+                  <span className="min-w-0 flex-1 truncate"><span className="font-medium">{session.targetJobName}</span> with {session.resumeName}</span>
+                  <span className="text-sm">{session.answeredCount} of {session.selectedCount} answered</span>
+                  <span className="font-semibold">{session.overallScore !== null ? `Score ${session.overallScore}` : session.reportStatus === "FAILED" ? "Report failed" : "Report pending"}</span>
+                </Link>
+              </li>
+            ))}
+          </Section>
           <Section title="Resume scores">
             {data.resumes.filter((resume) => resume.scores.length).map((resume) => {
               const values = resume.scores.map((score) => score.overall);

@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 import { apiRequest } from "@/lib/api/client";
 import type {
   Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, Resume, ResumeCreated, SuggestionsView,
-  TargetJobCreated
+  TargetJobCreated, VoiceSession, VoiceSaveResult, VoiceTranscript
 } from "@/lib/api/types";
 
 export type ApiTarget = {
@@ -113,7 +113,8 @@ const ownHistory = (history: History, keep: string[]) => ({
   ...history,
   resumes: history.resumes.filter((item) => keep.includes(item.id)),
   targetJobs: history.targetJobs.filter((item) => keep.includes(item.id)),
-  practiceSets: history.practiceSets.filter((item) => keep.includes(item.id))
+  practiceSets: history.practiceSets.filter((item) => keep.includes(item.id)),
+  voiceSessions: history.voiceSessions.filter((item) => keep.includes(item.id))
 });
 
 const ids = (items: { id: string }[]) => items.map((item) => item.id);
@@ -169,7 +170,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     await readJob(attempt.activeJob!.jobId);
 
     const preview = record("GET /api/resumes/{id}/delete-impact", await get<DeleteImpact>(`${base}/api/resumes/${resume.id}/delete-impact`));
-    expect(preview).toEqual({ scores: 1, fits: 1, suggestionSets: 1, practiceSets: 1, attempts: 1, staleSuggestionSets: 1 });
+    expect(preview).toEqual({ scores: 1, fits: 1, suggestionSets: 1, practiceSets: 1, attempts: 1, staleSuggestionSets: 1, voiceSessions: 0 });
     record("GET /api/history", ownHistory(await get<History>(`${base}/api/history`), [resume.id, job.id, set.id]));
 
     await apiRequest(`${base}/api/resumes/${resume.id}`, { method: "DELETE" });
@@ -235,6 +236,42 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
       method: "PATCH", body: { jobTitle: "Staff Engineer" }
     }));
     expect(updated.latestScore?.stale).toBe(true);
+  });
+
+  it("saves, replays, reopens and deletes voice reports without adding text attempts", async () => {
+    const resume = await paste("Voice backend");
+    const job = await targetJob();
+    const set = await createSet(resume.id, job.id);
+    await settle([set.activeJob!.jobId]);
+    const create = () => post<VoiceSession>(`${base}/api/voice-sessions`, { practiceSetId: set.id });
+    const draft = record("POST /api/voice-sessions", await create());
+    expect(draft.status).toBe("DRAFT");
+    expect(draft.questions.length).toBeGreaterThan(0);
+    expect(ids((await get<History>(`${base}/api/history`)).voiceSessions)).not.toContain(draft.id);
+    const transcript: VoiceTranscript = { answers: draft.questions.map((q, index) => ({ questionId: q.id, interviewerText: q.text, answerText: index === 0 ? "I improved a Kotlin payment service by measuring slow PostgreSQL queries, adding an index, and validating the improvement under load." : "", incomplete: index === 0 })) };
+    const saved = record("POST /api/voice-sessions/{id}/save", await post<VoiceSaveResult>(`${base}/api/voice-sessions/${draft.id}/save`, transcript));
+    expect(saved.replayed).toBe(false);
+    await settle([saved.session.reportJobId!]);
+    await readJob(saved.session.reportJobId!);
+    const detail = record("GET /api/voice-sessions/{id} (completed)", await get<VoiceSession>(`${base}/api/voice-sessions/${draft.id}`));
+    expect(detail.report).toMatchObject({ selectedCount: draft.questions.length, answeredCount: 1 });
+    expect(detail.report!.answers[0]).toMatchObject({ questionId: draft.questions[0].id, incomplete: true });
+    expect(detail.report!.unansweredQuestionIds).toHaveLength(draft.questions.length - 1);
+    const replay = record("POST /api/voice-sessions/{id}/save (replay)", await post<VoiceSaveResult>(`${base}/api/voice-sessions/${draft.id}/save`, transcript));
+    expect(replay).toMatchObject({ replayed: true, session: { submissionJobId: saved.session.submissionJobId, reportJobId: saved.session.reportJobId } });
+    expect((await readSet(set.id)).questions.every((q) => q.attempts.length === 0)).toBe(true);
+    record("GET /api/history (voice)", ownHistory(await get<History>(`${base}/api/history`), [resume.id, job.id, set.id, draft.id]));
+    const impact = await get<DeleteImpact>(`${base}/api/resumes/${resume.id}/delete-impact`);
+    expect(impact.voiceSessions).toBe(1);
+    await apiRequest(`${base}/api/voice-sessions/${draft.id}`, { method: "DELETE", retries: 0 });
+    expect(await errorOf(get(`${base}/api/voice-sessions/${draft.id}`))).toMatchObject({ code: "VOICE_SESSION_NOT_FOUND" });
+    expect(await errorOf(get(`${base}/api/jobs/${saved.session.reportJobId}`))).toMatchObject({ code: "JOB_NOT_FOUND" });
+    const second = await create();
+    const secondSaved = await post<VoiceSaveResult>(`${base}/api/voice-sessions/${second.id}/save`, { answers: second.questions.map((q, i) => ({ questionId: q.id, interviewerText: q.text, answerText: i === 0 ? "A second answer" : "", incomplete: false })) });
+    await apiRequest(`${base}/api/target-jobs/${job.id}`, { method: "DELETE", retries: 0 });
+    expect(await errorOf(get(`${base}/api/voice-sessions/${second.id}`))).toMatchObject({ code: "VOICE_SESSION_NOT_FOUND" });
+    expect(await errorOf(get(`${base}/api/jobs/${secondSaved.session.reportJobId}`))).toMatchObject({ code: "JOB_NOT_FOUND" });
+    expect(ids((await get<History>(`${base}/api/history`)).resumes)).toContain(resume.id);
   });
 
   // Runs last, after every scenario above has recorded its shapes. The mock API run writes the file when it is missing;
