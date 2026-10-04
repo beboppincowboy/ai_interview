@@ -11,6 +11,7 @@ import dev.jiaming.ai_interview.common.lockOwnerShared
 import dev.jiaming.ai_interview.common.sha256Hex
 import dev.jiaming.ai_interview.jobs.JobSubmissionService
 import dev.jiaming.ai_interview.jobs.JobType
+import dev.jiaming.ai_interview.jobs.JobStatus
 import java.time.Duration
 import java.util.UUID
 import org.slf4j.LoggerFactory
@@ -178,7 +179,7 @@ class VoiceSessionService(
             val oldJobId = current.view.reportJobId ?: notRetryable()
             val oldJob = findReportJob(userId, oldJobId) ?: notRetryable()
             if (oldJob.jobType != JobType.VOICE_REPORT.name || oldJob.resourceType != VoiceReportPayload.RESOURCE ||
-                oldJob.resourceId != sessionId || oldJob.status != "FAILED") notRetryable()
+                oldJob.resourceId != sessionId || oldJob.status != JobStatus.FAILED.name) notRetryable()
             val payload = try {
                 objectMapper.treeToValue(oldJob.requestPayload, VoiceReportPayload::class.java)
             } catch (exception: Exception) {
@@ -202,7 +203,7 @@ class VoiceSessionService(
                 replacement.jobId, sessionId, userId, current.view.submissionJobId, oldJobId,
             )
             if (updated != 1) throw IllegalStateException("Voice report session $sessionId changed during retry")
-            find(userId, sessionId)!!.view
+            current.view.copy(reportJobId = replacement.jobId, report = null)
         }
     }
 
@@ -292,7 +293,7 @@ class VoiceSessionService(
         val answers = session.transcript.answers.associateBy { it.questionId }
         session.questions.forEach { question ->
             val answer = answers[question.id]?.takeIf { it.answerText.isNotBlank() } ?: return@forEach
-            val field = "answer:${question.id}"
+            val field = voiceAnswerCheckpointField(question.id)
             val stored = resultPayload.get(field) ?: return@forEach
             val checkpoint = try {
                 objectMapper.treeToValue(stored, VoiceAnswerScoreCheckpoint::class.java)

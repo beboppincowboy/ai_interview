@@ -53,13 +53,9 @@ class JobSubmissionService(
         if (existing.isPresent) return existing.get()
         val userId = localUserService.localUserId()
         val request = objectMapper.valueToTree<JsonNode>(requestPayload)
-        val created = if (initialResultPayload == null) {
-            jobStore.createIfAbsent(userId, type, resourceType, resourceId, request, fingerprint, properties.maxAttempts)
-        } else {
-            jobStore.createIfAbsentWithInitialResult(
-                userId, type, resourceType, resourceId, request, fingerprint, properties.maxAttempts, initialResultPayload,
-            )
-        }
+        val created = jobStore.createIfAbsentWithInitialResult(
+            userId, type, resourceType, resourceId, request, fingerprint, properties.maxAttempts, initialResultPayload,
+        )
         if (created.isEmpty) return findReusable(type, fingerprint).orElseThrow { IllegalStateException("A matching active job won the submission race but could not be loaded") }
         val job = created.get()
         metrics.submitted(type)

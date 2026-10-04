@@ -53,6 +53,8 @@ internal fun voiceAnswerInputDigest(
     return sha256Hex(encoded)
 }
 
+internal fun voiceAnswerCheckpointField(questionId: UUID): String = "answer:$questionId"
+
 internal fun validVoiceFeedback(feedback: AnswerFeedbackResult): Boolean = feedback.score in 0..100 && feedback.summary.isNotBlank()
 
 internal fun validVoiceAnswerCheckpoint(

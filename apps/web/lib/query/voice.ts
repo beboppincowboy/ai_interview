@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api/client";
 import type { VoiceSaveResult, VoiceSession, VoiceToken, VoiceTranscript } from "@/lib/api/types";
 
@@ -32,16 +32,18 @@ export function useVoiceSession(id: string) {
   return useQuery({ queryKey: voiceKeys.session(id), queryFn: ({ signal }) => getVoiceSession(id, signal) });
 }
 
+const invalidateVoiceSession = (client: QueryClient, id: string) => Promise.all([
+  client.invalidateQueries({ queryKey: voiceKeys.session(id) }),
+  client.invalidateQueries({ queryKey: ["history"] })
+]);
+
 export function useRetryVoiceReport(id: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => retryVoiceReport(id),
     onSuccess: (session) => client.setQueryData(voiceKeys.session(id), session),
     // A lost reply may follow a committed Retry; refresh its current job identity on either outcome.
-    onSettled: () => Promise.all([
-      client.invalidateQueries({ queryKey: voiceKeys.session(id) }),
-      client.invalidateQueries({ queryKey: ["history"] })
-    ])
+    onSettled: () => invalidateVoiceSession(client, id)
   });
 }
 
@@ -49,9 +51,6 @@ export function useDeleteVoiceSession(id: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => deleteVoiceSession(id),
-    onSettled: () => Promise.all([
-      client.invalidateQueries({ queryKey: voiceKeys.session(id) }),
-      client.invalidateQueries({ queryKey: ["history"] })
-    ])
+    onSettled: () => invalidateVoiceSession(client, id)
   });
 }

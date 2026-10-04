@@ -49,7 +49,7 @@ class VoiceReportJobHandler(
         val scored = mutableMapOf<java.util.UUID, VoiceAnswerReport>()
         session.questions.forEach { question ->
             val answer = answersByQuestion[question.id]?.takeIf { it.answerText.isNotBlank() } ?: return@forEach
-            val checkpointField = "answer:${question.id}"
+            val checkpointField = voiceAnswerCheckpointField(question.id)
             val savedCheckpoint = runCatching {
                 context.checkpoint(checkpointField, VoiceAnswerScoreCheckpoint::class.java)
             }.getOrNull()?.takeIf {
