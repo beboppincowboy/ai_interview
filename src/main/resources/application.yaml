@@ -100,7 +100,7 @@ app:
   voice:
     enabled: ${VOICE_ENABLED:false}
     model: ${VOICE_MODEL:gemini-3.8-live}
-    api-version: ${VOICE_API_VERSION:v1alpha}
+    api-version: ${VOICE_API_VERSION:v1beta}
     silence-ms: ${VOICE_SILENCE_MS:4500}
     api-key: ${GEMINI_API_KEY:}
   redis:

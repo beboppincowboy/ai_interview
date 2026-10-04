@@ -15,7 +15,7 @@ The API refuses to start with `VOICE_ENABLED=true` in three cases:
 | `SERVER_ADDRESS` | API environment | `127.0.0.1` for `./gradlew bootRun` |
 | `GEMINI_API_KEY` | untracked root `.env` | the server key; it never reaches the browser |
 | `VITE_VOICE_ENABLED` | web build | `true` to show the voice card; only local Compose sets it |
-| `VOICE_MODEL`, `VOICE_API_VERSION`, `VOICE_SILENCE_MS` | API environment | defaults `gemini-3.8-live`, `v1alpha`, `4500`; change them only after rerunning the proof below |
+| `VOICE_MODEL`, `VOICE_API_VERSION`, `VOICE_SILENCE_MS` | API environment | defaults `gemini-3.8-live`, `v1beta`, `4500`; the API rejects any voice version other than `v1beta` |
 
 Local example:
 
@@ -36,7 +36,15 @@ cd apps/web
 node --env-file=../../.env scripts/voice-live-proof.mjs
 ```
 
-### Results, 2026-10-04 (`gemini-3.8-live`, `@google/genai` 2.27.0)
+### Agent-run beta proof, 2026-10-04
+
+The strengthened script passed all six checks with `gemini-3.8-live`, SDK `2.27.0` and `v1beta`: constrained minting, synthetic speech with both transcriptions and 24 kHz PCM, single-use rejection, expired-start rejection, locked instruction/modality, and a wrong client model producing the locked question in audio. The four-second mid-answer pause produced no interviewer response. This proves the scripted provider seam; it does not establish browser microphone acceptance or the application token endpoint.
+
+The SDK still prints its experimental-token and alpha-version warnings. The beta run above passed without an alpha fallback. Speech recognition rendered "queue age" as "QH", so transcript correction remains necessary.
+
+### Historical results, 2026-10-04 (`gemini-3.8-live`, `@google/genai` 2.27.0)
+
+These are observations from the earlier proof run. The current script tests only `v1beta` and requires nonempty transcripts plus validated interviewer audio; its new result is recorded separately above.
 
 | Check | v1beta | v1alpha |
 |---|---|---|
@@ -48,8 +56,8 @@ node --env-file=../../.env scripts/voice-live-proof.mjs
 | Client-side TEXT modality and a conflicting instruction are ignored; the locked setup still asks the question in audio | pass | not rerun |
 | Connecting with a different model opens a session but produces nothing unprompted | observed | not rerun |
 
-What the proof showed:
-- **API version:** both versions work for minting and connecting. The API defaults to `v1alpha` because SDK 2.27.0 warns on every connection otherwise. The token response carries the version, so the browser always matches the API.
+What the historical proof showed:
+- **API version:** the earlier run observed successful minting and connections on both versions. The current contract pins minting and browser connections to `v1beta`; the proof no longer tries `v1alpha` or falls back to it.
 - **Silence threshold:** at a 2000 ms silence threshold, a four-second thinking pause ended the candidate's turn and drew a mid-answer acknowledgement. At 4500 ms the pause passed, and the interviewer acknowledged once after the answer without asking anything new.
 - **Speech recognition:** it is imperfect. "Queue age" came back as "Qage" and "QH".
 - **Lost tail:** the last clause of an answer can be missing if the connection closes right after the audio ends. That is why Next and End drain for two seconds and mark the tail uncertain for review.

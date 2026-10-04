@@ -5,13 +5,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.core.env.Environment
 import org.springframework.stereotype.Component
 
-/** Spoken interviews. The defaults are the model, API version and silence threshold the U1 provider proof used. */
+/** Spoken interviews. Defaults follow the selected model, v1beta provider contract and U1 silence threshold. */
 @ConfigurationProperties(prefix = "app.voice")
 class VoiceProperties(enabled: Boolean?, model: String?, apiVersion: String?, silenceMs: Int?, apiKey: String?) {
     val enabled: Boolean = enabled ?: false
     val model: String = model?.takeIf(String::isNotBlank) ?: "gemini-3.8-live"
-    val apiVersion: String = (apiVersion?.takeIf(String::isNotBlank) ?: "v1alpha").also {
-        require(it == "v1alpha" || it == "v1beta") { "VOICE_API_VERSION must be v1alpha or v1beta" }
+    val apiVersion: String = (apiVersion?.takeIf(String::isNotBlank) ?: "v1beta").also {
+        require(it == "v1beta") { "VOICE_API_VERSION must be v1beta for ephemeral-token sessions" }
     }
     val silenceMs: Int = silenceMs?.takeIf { it > 0 } ?: 4500
     val apiKey: String = apiKey.orEmpty()

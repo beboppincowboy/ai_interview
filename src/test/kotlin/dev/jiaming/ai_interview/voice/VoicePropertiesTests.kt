@@ -9,19 +9,23 @@ class VoicePropertiesTests {
 	private fun enabled(apiKey: String? = "test-key") = VoiceProperties(true, null, null, null, apiKey)
 
 	@Test
-	fun voiceIsOffByDefaultWithTheProvenLiveSettings() {
+	fun voiceIsOffByDefaultWithBetaLiveSettings() {
 		val properties = VoiceProperties(null, null, null, null, null)
 		assertThat(properties.enabled).isFalse()
 		assertThat(properties.model).isEqualTo("gemini-3.8-live")
-		assertThat(properties.apiVersion).isEqualTo("v1alpha")
+		assertThat(properties.apiVersion).isEqualTo("v1beta")
 		assertThat(properties.silenceMs).isEqualTo(4500)
 	}
 
 	@Test
-	fun rejectsAnApiVersionTheProofDidNotCover() {
+	fun rejectsApiVersionsOutsideThePinnedBetaContract() {
+		assertThatThrownBy { VoiceProperties(false, null, "v1alpha", null, null) }
+			.isInstanceOf(IllegalArgumentException::class.java)
+			.hasMessageContaining("v1beta")
 		assertThatThrownBy { VoiceProperties(false, null, "v2", null, null) }
 			.isInstanceOf(IllegalArgumentException::class.java)
-			.hasMessageContaining("v1alpha or v1beta")
+			.hasMessageContaining("v1beta")
+		assertThat(VoiceProperties(false, null, "v1beta", null, null).apiVersion).isEqualTo("v1beta")
 	}
 
 	@Test
