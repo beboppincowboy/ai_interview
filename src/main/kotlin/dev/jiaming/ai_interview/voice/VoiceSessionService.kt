@@ -1,6 +1,8 @@
 package dev.jiaming.ai_interview.voice
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
@@ -33,6 +35,10 @@ class VoiceSessionService(
     private val transactionOperations: TransactionOperations,
 ) {
     fun get(sessionId: UUID): VoiceSessionView = find(localUserService.localUserId(), sessionId)?.view ?: notFound()
+
+    /** Worker read bound to the claimed job owner, not the request-time local-user shortcut. */
+    internal fun getForReport(userId: UUID, sessionId: UUID): VoiceSessionView =
+        find(userId, sessionId)?.view ?: throw IllegalStateException("Voice report session $sessionId was not found for its job owner")
 
     /** Starts a draft on a READY practice set with a copy of its first [MAX_QUESTIONS] AI questions in stored order. */
     fun create(practiceSetId: UUID): VoiceSessionView {
@@ -122,6 +128,49 @@ class VoiceSessionService(
         }
     }
 
+    /** Replaces a failed current report job while preserving the original Save and valid completed answers. */
+    fun retryReport(sessionId: UUID): VoiceSessionView {
+        jobSubmissionService.assertApiAvailable()
+        val userId = localUserService.localUserId()
+        return inTransaction {
+            jdbcTemplate.lockOwnerShared(userId)
+            // Match Delete's job-before-session order; never lock an old job after acquiring the session row.
+            lockReportJobs(userId, sessionId)
+            val current = find(userId, sessionId, lock = true) ?: notFound()
+            if (current.view.status != VoiceSessionStatus.SAVED || current.view.transcript == null) notFound()
+            if (current.view.report != null) return@inTransaction current.view
+
+            val oldJobId = current.view.reportJobId ?: notRetryable()
+            val oldJob = findReportJob(userId, oldJobId) ?: notRetryable()
+            if (oldJob.jobType != JobType.VOICE_REPORT.name || oldJob.resourceType != VoiceReportPayload.RESOURCE ||
+                oldJob.resourceId != sessionId || oldJob.status != "FAILED") notRetryable()
+            val payload = try {
+                objectMapper.treeToValue(oldJob.requestPayload, VoiceReportPayload::class.java)
+            } catch (exception: Exception) {
+                throw IllegalStateException("Failed voice report job $oldJobId has an invalid payload", exception)
+            }
+            if (payload.payloadVersion != VoiceReportPayload.CURRENT_VERSION || payload.voiceSessionId != sessionId ||
+                payload.resumeId != current.view.resumeId || payload.targetJobId != current.view.targetJobId) notRetryable()
+
+            requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
+            val checkpoints = transferableCheckpoints(current.view, oldJob.resultPayload)
+            val replacement = jobSubmissionService.createOrReuseWithInitialResult(
+                JobType.VOICE_REPORT,
+                VoiceReportPayload.RESOURCE,
+                sessionId,
+                VoiceReportPayload(sessionId, current.view.resumeId, current.view.targetJobId),
+                jobSubmissionService.fingerprint(JobType.VOICE_REPORT.name, sessionId),
+                checkpoints,
+            )
+            val updated = jdbcTemplate.update(
+                "UPDATE ai_interview_app.voice_sessions SET report = NULL, report_job_id = ? WHERE id = ? AND user_id = ? AND saved_at IS NOT NULL AND submission_job_id = ? AND report_job_id = ?",
+                replacement.jobId, sessionId, userId, current.view.submissionJobId, oldJobId,
+            )
+            if (updated != 1) throw IllegalStateException("Voice report session $sessionId changed during retry")
+            find(userId, sessionId)!!.view
+        }
+    }
+
     /** Removes an unsaved draft. One statement, so a Save holding the row commits first and its saved row is kept. */
     fun discard(sessionId: UUID) {
         val userId = localUserService.localUserId()
@@ -191,10 +240,49 @@ class VoiceSessionService(
         UUID::class.java, userId, VoiceReportPayload.RESOURCE, sessionId,
     )
 
+    private fun findReportJob(userId: UUID, jobId: UUID): ReportJobRow? = jdbcTemplate.query(
+        "SELECT job_type, resource_type, resource_id, status, request_payload::text AS request_payload, result_payload::text AS result_payload FROM ai_interview_app.background_jobs WHERE id = ? AND user_id = ?",
+        RowMapper { rs, _ ->
+            ReportJobRow(
+                rs.getString("job_type"), rs.getString("resource_type"), rs.getObject("resource_id", UUID::class.java),
+                rs.getString("status"), readJson(rs.getString("request_payload")), readJson(rs.getString("result_payload")),
+            )
+        },
+        jobId, userId,
+    ).firstOrNull()
+
+    private fun transferableCheckpoints(session: VoiceSessionView, resultPayload: JsonNode?): ObjectNode {
+        val transferred = objectMapper.createObjectNode()
+        if (resultPayload == null || !resultPayload.isObject || session.transcript == null) return transferred
+        val answers = session.transcript.answers.associateBy { it.questionId }
+        session.questions.forEach { question ->
+            val answer = answers[question.id]?.takeIf { it.answerText.isNotBlank() } ?: return@forEach
+            val field = "answer:${question.id}"
+            val stored = resultPayload.get(field) ?: return@forEach
+            val checkpoint = try {
+                objectMapper.treeToValue(stored, VoiceAnswerScoreCheckpoint::class.java)
+            } catch (_: Exception) {
+                return@forEach
+            }
+            if (validVoiceAnswerCheckpoint(checkpoint, session, question, answer, objectMapper)) {
+                transferred.set<JsonNode>(field, stored.deepCopy())
+            }
+        }
+        return transferred
+    }
+
+    private fun readJson(raw: String?): JsonNode? = raw?.let {
+        try {
+            objectMapper.readTree(it)
+        } catch (exception: Exception) {
+            throw IllegalStateException("Could not read voice report job JSON", exception)
+        }
+    }
+
     private fun find(userId: UUID, sessionId: UUID, lock: Boolean = false): SessionRow? = jdbcTemplate.query(
         """
             SELECT id, practice_set_id, resume_id, target_job_id, questions::text AS questions, transcript::text AS transcript,
-                transcript_hash, submission_job_id, report_job_id, created_at, run_deadline, draft_expires_at, saved_at,
+                transcript_hash, submission_job_id, report_job_id, report::text AS report, created_at, run_deadline, draft_expires_at, saved_at,
                 draft_expires_at <= now() AS expired
             FROM ai_interview_app.voice_sessions
             WHERE id = ? AND user_id = ?
@@ -216,6 +304,7 @@ class VoiceSessionService(
                     rs.getObject("submission_job_id", UUID::class.java), rs.getObject("report_job_id", UUID::class.java),
                     rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("run_deadline").toInstant(),
                     rs.getTimestamp("draft_expires_at").toInstant(), savedAt,
+                    rs.getString("report")?.let { objectMapper.readValue(it, VoiceSessionReport::class.java) },
                 ),
                 rs.getString("transcript_hash"),
             )
@@ -232,7 +321,18 @@ class VoiceSessionService(
     private fun alreadySaved(): Nothing =
         throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_SESSION_ALREADY_SAVED", "This interview was already saved")
 
+    private fun notRetryable(): Nothing =
+        throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_REPORT_NOT_RETRYABLE", "Only a failed current report can be retried")
+
     private data class SessionRow(val view: VoiceSessionView, val transcriptHash: String?)
+    private data class ReportJobRow(
+        val jobType: String,
+        val resourceType: String?,
+        val resourceId: UUID?,
+        val status: String,
+        val requestPayload: JsonNode?,
+        val resultPayload: JsonNode?,
+    )
 
     companion object {
         const val MAX_QUESTIONS = 6

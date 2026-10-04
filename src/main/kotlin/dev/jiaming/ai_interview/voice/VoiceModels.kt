@@ -18,6 +18,7 @@ data class VoiceSessionView(
     val runDeadline: Instant,
     val draftExpiresAt: Instant,
     val savedAt: Instant?,
+    val report: VoiceSessionReport? = null,
 )
 
 /** EXPIRED is an unsaved draft past its expiry; cleanup removes it. */

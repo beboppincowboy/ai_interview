@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.JsonNode
 import dev.jiaming.ai_interview.practice.AnswerFeedbackResult
 import dev.jiaming.ai_interview.practice.PracticeQuestionDraft
 import dev.jiaming.ai_interview.score.ResumeScoreResult
+import dev.jiaming.ai_interview.voice.VoiceReportPayload
+import dev.jiaming.ai_interview.voice.VoiceSessionReport
 
 @Service
 class JobEffectMaterializationService(private val jdbcTemplate: JdbcTemplate, private val objectMapper: ObjectMapper) {
@@ -91,6 +93,24 @@ class JobEffectMaterializationService(private val jdbcTemplate: JdbcTemplate, pr
             )
             if (updated != 1) throw IllegalStateException("Attempt $attemptId was not found for job owner $userId")
         }
+    }
+    @Transactional
+    fun materializeVoiceReport(job: BackgroundJob, leaseToken: UUID, sessionId: UUID, report: VoiceSessionReport) {
+        lockOwnedLease(job.id, leaseToken)
+        require(job.jobType == JobType.VOICE_REPORT && job.resourceType == VoiceReportPayload.RESOURCE && job.resourceId == sessionId) {
+            "Voice report job does not own session $sessionId"
+        }
+        val existing = findEffect(job.id, JobEffectType.VOICE_REPORT)
+        if (existing != null) {
+            if (existing != sessionId) throw IllegalStateException("Job ${job.id} already materialized a different voice session")
+            return
+        }
+        claimEffect(job.id, JobEffectType.VOICE_REPORT, sessionId)
+        val updated = jdbcTemplate.update(
+            "UPDATE ai_interview_app.voice_sessions SET report = ?::jsonb WHERE id = ? AND user_id = ? AND saved_at IS NOT NULL AND report_job_id = ?",
+            objectMapper.writeValueAsString(report), sessionId, job.requireUserId(), job.id,
+        )
+        if (updated != 1) throw JobLeaseLostException(job.id)
     }
     @Transactional
     fun <T> withOwnedLease(job: BackgroundJob, leaseToken: UUID, work: Supplier<T>): T {
