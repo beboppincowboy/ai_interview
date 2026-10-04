@@ -192,8 +192,12 @@ class CoachPromptBuilder {
         appendLine("Return exactly one JSON object and nothing else: no markdown fences and no text before or after it. Use this shape:")
         appendLine("<output_format>").appendLine(outputShape.trimIndent()).appendLine("</output_format>")
         appendLine().appendLine("# Input")
-        // An input cannot close its own tag early, so pasted text never escapes its delimiter.
-        inputs.forEach { (tag, value) -> appendLine("<$tag>").appendLine(value.replace("</$tag>", "<\\/$tag>")).appendLine("</$tag>") }
+        // Escape input markup so user values cannot impersonate their template delimiters.
+        inputs.forEach { (tag, value) ->
+            appendLine("<$tag>")
+            appendLine(value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+            appendLine("</$tag>")
+        }
     }.trimEnd()
 
     private fun truncate(value: String?, limit: Int): String {

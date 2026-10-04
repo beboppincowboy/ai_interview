@@ -48,7 +48,10 @@ export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; tri
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen && save.isPending) return;
+      setOpen(nextOpen);
+    }}>
       <DialogTrigger asChild>{trigger ?? <Button variant="outline">Paste LinkedIn experience</Button>}</DialogTrigger>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
@@ -105,7 +108,7 @@ export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; tri
                         ) : null}
                       </div>
                       {!item.duplicateOf ? (
-                        <Button variant="ghost" size="sm" onClick={() => setRemoved((list) => [...list, index])} aria-label={`Remove ${item.title}`}>
+                        <Button variant="ghost" size="sm" onClick={() => setRemoved((list) => [...list, index])} disabled={save.isPending} aria-label={`Remove ${item.title}`}>
                           Remove
                         </Button>
                       ) : null}
@@ -116,8 +119,8 @@ export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; tri
             </ul>
             {save.isError ? <p role="alert" className="text-sm text-destructive">{friendlyError(save.error)}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setJobId(null)}>Back</Button>
-              <Button variant="ghost" onClick={discard}>Discard</Button>
+              <Button variant="ghost" onClick={() => setJobId(null)} disabled={save.isPending}>Back</Button>
+              <Button variant="ghost" onClick={discard} disabled={save.isPending}>Discard</Button>
               <Button
                 disabled={kept.length === 0 || save.isPending}
                 onClick={() => save.mutate(

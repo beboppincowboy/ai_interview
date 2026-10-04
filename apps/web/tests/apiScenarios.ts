@@ -52,19 +52,56 @@ const jobText = () => [
   `Reference ${crypto.randomUUID()}`
 ].join("\n");
 
-// Either side may return these lists empty for the same input, so they count by key only: the fake leaves a third of
-// suggestion runs empty, and the real API drops every rewrite whose original line the model did not copy exactly.
-const KEY_ONLY = new Set(["result.items", "result.rewrites"]);
+// These result arrays can be empty, but their stable item fields remain part of the API contract.
+const OPTIONAL_ARRAY_FIELDS: Record<string, string[]> = {
+  "result.items": [
+    "guidance",
+    "match",
+    "requirement",
+    "source",
+    "source.id",
+    "source.name",
+    "source.type",
+    "whyItFits"
+  ],
+  "result.rewrites": ["original", "placeholders", "rewritten", "section"]
+};
 
 /** Key paths of a JSON value. A list contributes its first item, as `path[]`. */
-function shapeOf(value: unknown, path = ""): string[] {
-  if (KEY_ONLY.has(path)) return [];
-  if (Array.isArray(value)) return value.length ? shapeOf(value[0], `${path}[]`) : [];
+export function shapeOf(value: unknown, path = ""): string[] {
+  if (Array.isArray(value)) {
+    const declaredFields = OPTIONAL_ARRAY_FIELDS[path];
+    if (declaredFields) {
+      const expected = declaredFields.map((field) => `${path}[].${field}`).sort();
+      for (const item of value) {
+        const observed = shapeOf(item, `${path}[]`).sort();
+        if (observed.length !== expected.length || observed.some((field, index) => field !== expected[index])) {
+          throw new Error(`Unexpected item shape at ${path}: expected ${expected.join(", ")}; got ${observed.join(", ")}`);
+        }
+      }
+      return expected;
+    }
+    return value.length ? shapeOf(value[0], `${path}[]`) : [];
+  }
   if (value === null || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, child]) => {
     const childPath = path ? `${path}.${key}` : key;
     return [childPath, ...shapeOf(child, childPath)];
   });
+}
+
+/** Records a response shape under its scenario label. */
+export function recordShape<T>(shapes: Record<string, string[]>, name: string, body: T): T {
+  const shape = shapeOf(body).sort();
+  const previous = shapes[name];
+  if (previous) {
+    if (previous.length !== shape.length || previous.some((field, index) => field !== shape[index])) {
+      throw new Error(`Response shape changed between occurrences of ${name}`);
+    }
+  } else {
+    shapes[name] = shape;
+  }
+  return body;
 }
 
 /** History cut to the items with these IDs, so its shape describes what the scenario made, not whatever is listed first. */
@@ -80,10 +117,7 @@ const ids = (items: { id: string }[]) => items.map((item) => item.id);
 /** Registers the shared scenarios, then one test comparing every recorded shape with tests/apiShapes.json. */
 export function registerApiScenarios({ base, settle }: ApiTarget) {
   const shapes: Record<string, string[]> = {};
-  const record = <T,>(name: string, body: T) => {
-    shapes[name] = shapeOf(body).sort();
-    return body;
-  };
+  const record = <T,>(name: string, body: T) => recordShape(shapes, name, body);
 
   const paste = async (name: string, text = resumeText()) => record("POST /api/resumes/paste (new)",
     await post<ResumeCreated>(`${base}/api/resumes/paste`, { name, jobTitle: null, text })).resume;
