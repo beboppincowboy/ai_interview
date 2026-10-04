@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.json.JsonMapper
 import dev.jiaming.ai_interview.common.LocalUserService
+import dev.jiaming.ai_interview.common.ApiRequestException
+import dev.jiaming.ai_interview.common.DeleteImpactService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
 import dev.jiaming.ai_interview.common.RuntimeModeProperties
@@ -33,6 +35,10 @@ import dev.jiaming.ai_interview.jobs.JobSubmissionService
 import dev.jiaming.ai_interview.jobs.JobType
 import dev.jiaming.ai_interview.jobs.RequestFingerprintService
 import dev.jiaming.ai_interview.practice.AnswerFeedbackResult
+import dev.jiaming.ai_interview.resume.ResumeLibraryService
+import dev.jiaming.ai_interview.resume.ResumePersistenceService
+import dev.jiaming.ai_interview.resume.ResumeStorageCleanupService
+import dev.jiaming.ai_interview.resume.ResumeTextNormalizer
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -54,6 +60,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.EnableTransactionManagement
 import org.springframework.transaction.support.TransactionTemplate
+import org.springframework.transaction.support.TransactionOperations
+import org.springframework.transaction.support.TransactionCallback
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -67,6 +75,53 @@ import java.util.concurrent.TimeUnit
 
 @Testcontainers
 class VoiceReportIntegrationTests {
+    @Test
+    fun resumeDeletionAndReportRetryUseCompatibleJobThenOwnerLocks() {
+        val session = savedSession(answerCount = 1)
+        val lease = UUID.randomUUID()
+        jobs.claim(session.reportJobId!!, lease, Duration.ofMinutes(2)).orElseThrow()
+        assertThat(jobs.markFailed(session.reportJobId, lease, "SCORER_FAILED", "Retryable report")).isTrue()
+        val deletionLockedJob = CountDownLatch(1)
+        val deletionTransactions = object : TransactionOperations {
+            override fun <T : Any?> execute(action: TransactionCallback<T>): T = transactions.execute { status ->
+                // Pause the real Delete just after its first job lock, then let Retry reach that same lock.
+                jdbc.queryForList("SELECT id FROM ai_interview_app.background_jobs WHERE id = ? FOR UPDATE", session.reportJobId)
+                deletionLockedJob.countDown()
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                while (true) {
+                    jdbc.execute("SELECT pg_stat_clear_snapshot()")
+                    if (jdbc.queryForObject(
+                        "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%resource_type =%' AND query LIKE '%ORDER BY id FOR UPDATE%'",
+                        Int::class.java,
+                    ) != 0) break
+                    check(System.nanoTime() < deadline) { "Retry did not reach the locked report job" }
+                    Thread.sleep(20)
+                }
+                action.doInTransaction(status)
+            }
+        }
+        val library = ResumeLibraryService(
+            jdbc, local, Mockito.mock(ResumePersistenceService::class.java), ResumeTextNormalizer(),
+            Mockito.mock(RedisRequestGuard::class.java), deletionTransactions,
+            Mockito.mock(ResumeStorageCleanupService::class.java), Mockito.mock(DeleteImpactService::class.java), mapper,
+        )
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val delete = executor.submit { library.delete(session.resumeId) }
+            assertThat(deletionLockedJob.await(10, TimeUnit.SECONDS)).isTrue()
+            val retry = executor.submit<Throwable?> { runCatching { voice.retryReport(session.id) }.exceptionOrNull() }
+
+            delete.get(15, TimeUnit.SECONDS)
+            assertThat(retry.get(15, TimeUnit.SECONDS)).isInstanceOfSatisfying(ApiRequestException::class.java) {
+                assertThat(it.code()).isEqualTo("VOICE_SESSION_NOT_FOUND")
+            }
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM ai_interview_app.voice_sessions", Int::class.java)).isZero()
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM ai_interview_app.background_jobs", Int::class.java)).isZero()
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
     @Test
     fun aClaimedJobCannotScoreAnotherOwnersSavedSession() {
         val session = savedSession(answerCount = 1)

@@ -133,9 +133,9 @@ class VoiceSessionService(
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
         return inTransaction {
-            jdbcTemplate.lockOwnerShared(userId)
-            // Match Delete's job-before-session order; never lock an old job after acquiring the session row.
+            // Match source Delete's job-before-owner-before-session order to avoid a lock cycle.
             lockReportJobs(userId, sessionId)
+            jdbcTemplate.lockOwnerShared(userId)
             val current = find(userId, sessionId, lock = true) ?: notFound()
             if (current.view.status != VoiceSessionStatus.SAVED || current.view.transcript == null) notFound()
             if (current.view.report != null) return@inTransaction current.view
