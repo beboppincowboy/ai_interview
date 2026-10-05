@@ -215,7 +215,7 @@ class RedisRequestGuard(
     @JvmRecord
     private data class CachedHttpResponse(val status: Int, val body: JsonNode?)
 
-    private companion object {
+    internal companion object {
         val log = LoggerFactory.getLogger(RedisRequestGuard::class.java)
         val UNSAFE_KEY_CHARACTERS = Regex("[^A-Za-z0-9._:-]")
         // ponytail: one thread serializes renewals; use a bounded pool if heartbeat lag approaches the two-minute lease.

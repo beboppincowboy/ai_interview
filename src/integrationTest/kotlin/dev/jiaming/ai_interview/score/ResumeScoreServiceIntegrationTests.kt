@@ -101,7 +101,7 @@ class ResumeScoreServiceIntegrationTests {
         assertThat(first.score?.overall).isEqualTo(70)
         assertThat(first.activeJob?.jobType).isEqualTo(JobType.RESUME_SCORE)
 
-        library.patch(resumeId, ObjectMapper().readTree("""{"jobTitle":null}"""))
+        library.patch(resumeId, mapOf("jobTitle" to null))
         assertThat(library.get(resumeId).latestScore?.stale).isTrue()
 
         materialize(resumeId, score(84, null, "2026-09-30T11:00:00Z"))

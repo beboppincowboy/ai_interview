@@ -80,7 +80,7 @@ class ResumeLibraryService(
 
     fun patch(resumeId: UUID, fields: Map<String, Any?>): ResumeLibraryItem = patch(resumeId, objectMapper.valueToTree<JsonNode>(fields))
 
-    fun patch(resumeId: UUID, body: JsonNode): ResumeLibraryItem {
+    private fun patch(resumeId: UUID, body: JsonNode): ResumeLibraryItem {
         if (!body.isObject) throw RequestValidation.invalid("Request body must be an object")
         val unknown = body.fieldNames().asSequence().filterNot { it in setOf("name", "jobTitle") }.firstOrNull()
         if (unknown != null) throw RequestValidation.invalid("$unknown is not a supported resume field")
