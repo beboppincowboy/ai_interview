@@ -62,12 +62,15 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
             listOf(ResumeScoreFix(1, "Experience", "MEDIUM", "Add clear scope and measurable outcomes where you can support them."))
         }
         val resumeLines = resumeText.lineSequence().map(::collapseWhitespace).toSet()
+        // The prompt sent "<" before a tag name as "&lt;", so the model may copy a line back in that form.
         val rewrites = response.rewrites.orEmpty().filterNotNull()
-            .filter { !it.rewritten.isNullOrBlank() && !it.original.isNullOrBlank() && collapseWhitespace(it.original) in resumeLines }
-            .take(5).map { rewrite ->
+            .filter { !it.rewritten.isNullOrBlank() && !it.original.isNullOrBlank() }
+            .map { it to it.original!!.replace("&lt;", "<").trim() }
+            .filter { (_, original) -> collapseWhitespace(original) in resumeLines }
+            .take(5).map { (rewrite, original) ->
                 val rewritten = rewrite.rewritten!!.trim()
                 ResumeScoreRewrite(
-                    fallback(rewrite.section, "Experience"), rewrite.original!!.trim(), rewritten,
+                    fallback(rewrite.section, "Experience"), original, rewritten,
                     PLACEHOLDER.findAll(rewritten).map { it.value }.distinct().toList()
                 )
             }

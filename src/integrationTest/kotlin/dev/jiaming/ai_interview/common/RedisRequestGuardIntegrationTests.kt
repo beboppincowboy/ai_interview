@@ -154,6 +154,20 @@ class RedisRequestGuardIntegrationTests {
         assertThat(calls).hasValue(2)
     }
 
+    @Test
+    fun aRenewOnlyExtendsTheReservationItsCallerOwns() {
+        val key = "${prefix}reservation"
+        val renew = { owner: String ->
+            redisTemplate.execute(RedisRequestGuard.RENEW_IF_RESERVED_SCRIPT, listOf(key), owner, "60000")
+        }
+        redisTemplate.opsForValue().set(key, "${RedisRequestGuard.RESERVATION_MARKER}successor", Duration.ofSeconds(5))
+
+        assertThat(renew("${RedisRequestGuard.RESERVATION_MARKER}stale")).isEqualTo(0L)
+        assertThat(redisTemplate.getExpire(key, TimeUnit.MILLISECONDS)).isBetween(1L, 5_000L)
+        assertThat(renew("${RedisRequestGuard.RESERVATION_MARKER}successor")).isEqualTo(1L)
+        assertThat(redisTemplate.getExpire(key, TimeUnit.MILLISECONDS)).isGreaterThan(5_000L)
+    }
+
     private fun call(payload: Any = listOf("resume"), work: () -> CachedResponse): CachedResponse =
         guard.withIdempotentRetryCache("assessment", payload, CachedResponse::class.java) {
             calls.incrementAndGet()

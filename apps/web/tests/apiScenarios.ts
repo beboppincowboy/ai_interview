@@ -2,8 +2,8 @@
 // They hold on a persistent, shared database: every pasted text is unique, and lists are checked for what they contain
 // or omit rather than compared whole. Every response they read is recorded as a shape and compared with one committed
 // file, so a field that one side renames or drops fails the run against that side.
-import { expect, it } from "vitest";
-import { apiRequest } from "@/lib/api/client";
+import { afterAll, expect, it } from "vitest";
+import { ApiError, apiRequest } from "@/lib/api/client";
 import type {
   Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, Resume, ResumeCreated, SuggestionsView,
   TargetJobCreated, VoiceSession, VoiceSaveResult, VoiceTranscript
@@ -20,8 +20,11 @@ export const post = <T,>(path: string, body: unknown = {}) => apiRequest<T>(path
 export const get = <T,>(path: string) => apiRequest<T>(path, { retries: 0 });
 export const errorOf = (promise: Promise<unknown>) => promise.then(() => null, (error: unknown) => error);
 
-/** A real API's `settle`: polls each job until it ends. A failed job means the API broke at runtime, not contract drift. */
-export const pollJobs = (base: string) => async (jobIds: string[]) => {
+/** A real API's `settle`: polls each job until it ends. A failed job means the API broke at runtime, not contract drift.
+ * One settle call gets `timeoutMs`, well inside the live suite's 180s test timeout, so a job that never ends fails the
+ * run with its ID instead of hanging until vitest gives up. */
+export const pollJobs = (base: string, { timeoutMs = 75_000, intervalMs = 1_000 } = {}) => async (jobIds: string[]) => {
+  const deadline = Date.now() + timeoutMs;
   for (const jobId of jobIds) {
     for (;;) {
       const job = await get<JobStatusResponse>(`${base}/api/jobs/${jobId}`);
@@ -29,7 +32,10 @@ export const pollJobs = (base: string) => async (jobIds: string[]) => {
       if (job.status === "FAILED") {
         throw new Error(`Runtime failure, not a contract disagreement: ${job.jobType} job ${jobId} failed with ${job.error?.code ?? "no error code"}`);
       }
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      if (Date.now() >= deadline) {
+        throw new Error(`${job.jobType} job ${jobId} was still ${job.status} after ${timeoutMs / 1_000}s`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
   }
 };
@@ -52,25 +58,36 @@ const jobText = () => [
   `Reference ${crypto.randomUUID()}`
 ].join("\n");
 
-// These result arrays can be empty, but their stable item fields remain part of the API contract.
+// These AI result arrays can be empty, but their stable item fields remain part of the API contract.
 const OPTIONAL_ARRAY_FIELDS: Record<string, string[]> = {
+  "result.feedback": ["message: string", "priority: string"],
   "result.items": [
-    "guidance",
-    "match",
-    "requirement",
+    "guidance: string",
+    "match: string",
+    "requirement: string",
     "source",
-    "source.id",
-    "source.name",
-    "source.type",
-    "whyItFits"
+    "source.id: string",
+    "source.name: string",
+    "source.type: string",
+    "whyItFits: string"
   ],
-  "result.rewrites": ["original", "placeholders", "rewritten", "section"]
+  "result.matchedRequirements": ["evidence: string", "requirement: string"],
+  "result.missingRequirements": ["guidance: string", "requirement: string"],
+  "result.rewrites": ["original: string", "placeholders", "rewritten: string", "section: string"]
 };
+
+// Model-written text that the contract allows to be null: one run may fill it and the next may not, so either is
+// recorded as the same type.
+const MODEL_NULLABLE_TEXT = new Set(["category", "followUpQuestion", "nextStep", "rationale"]);
+const leafType = (key: string, value: unknown) =>
+  MODEL_NULLABLE_TEXT.has(key) && (value === null || typeof value === "string") ? "string|null"
+    : value === null ? "null" : typeof value;
 
 const sameFields = (a: string[], b: string[]) => a.length === b.length && a.every((field, index) => field === b[index]);
 
-/** Key paths of a JSON value. A list contributes its first item, as `path[]`. `populated` collects declared optional
- * arrays that arrived with items, so a run can tell real item shapes from the declared fallback. */
+/** Key paths of a JSON value, with the type of each value that is not an object or list (`path: string`). A list
+ * contributes its first item, as `path[]`. `populated` collects declared optional arrays that arrived with items,
+ * so a run can tell real item shapes from the declared fallback. */
 export function shapeOf(value: unknown, path = "", populated?: Set<string>): string[] {
   if (Array.isArray(value)) {
     const declaredFields = OPTIONAL_ARRAY_FIELDS[path];
@@ -90,6 +107,7 @@ export function shapeOf(value: unknown, path = "", populated?: Set<string>): str
   if (value === null || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, child]) => {
     const childPath = path ? `${path}.${key}` : key;
+    if (child === null || typeof child !== "object") return [`${childPath}: ${leafType(key, child)}`];
     return [childPath, ...shapeOf(child, childPath, populated)];
   });
 }
@@ -124,11 +142,48 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
   const shapes: Record<string, string[]> = {};
   const populated = new Set<string>();
   const record = <T,>(name: string, body: T) => recordShape(shapes, name, body, populated);
+  // Shapes are compared only after every scenario passed, so a filtered or failed run cannot rewrite apiShapes.json
+  // with part of the contract under `-u`.
+  let registered = 0;
+  let passed = 0;
+  const scenario = (name: string, run: () => Promise<void>) => {
+    registered += 1;
+    it(name, async () => {
+      await run();
+      passed += 1;
+    });
+  };
 
-  const paste = async (name: string, text = resumeText()) => record("POST /api/resumes/paste (new)",
-    await post<ResumeCreated>(`${base}/api/resumes/paste`, { name, jobTitle: null, text })).resume;
-  const targetJob = async () => record("POST /api/target-jobs (new)",
-    await post<TargetJobCreated>(`${base}/api/target-jobs`, { name: "Acme", text: jobText() })).targetJob;
+  // A real API keeps what a run creates, so the run deletes its resumes and target jobs (and with them their
+  // scores, fits, suggestions and practice sets) when it ends. The mock API is reset after every test.
+  const created = { resumes: new Set<string>(), targetJobs: new Set<string>() };
+  afterAll(async () => {
+    if (!base) return;
+    const paths = [
+      ...[...created.resumes].map((id) => `${base}/api/resumes/${id}`),
+      ...[...created.targetJobs].map((id) => `${base}/api/target-jobs/${id}`)
+    ];
+    // Every delete is attempted before the first unexpected error is reported, so one failure leaves nothing else behind.
+    const errors = [];
+    for (const path of paths) {
+      const error = await errorOf(apiRequest(path, { method: "DELETE" }));
+      if (error && !(error instanceof ApiError && error.status === 404)) errors.push(error);
+    }
+    if (errors.length) throw errors[0];
+  });
+
+  const paste = async (name: string, text = resumeText()) => {
+    const resume = record("POST /api/resumes/paste (new)",
+      await post<ResumeCreated>(`${base}/api/resumes/paste`, { name, jobTitle: null, text })).resume;
+    created.resumes.add(resume.id);
+    return resume;
+  };
+  const targetJob = async () => {
+    const job = record("POST /api/target-jobs (new)",
+      await post<TargetJobCreated>(`${base}/api/target-jobs`, { name: "Acme", text: jobText() })).targetJob;
+    created.targetJobs.add(job.id);
+    return job;
+  };
   const createSet = async (resumeId: string, targetJobId: string, label = "POST /api/practice-sets (new)") => record(label,
     await post<PracticeSet>(`${base}/api/practice-sets`, { resumeId, targetJobId, mode: "PRACTICE" }));
   const readSet = (id: string) => get<PracticeSet>(`${base}/api/practice-sets/${id}`);
@@ -137,7 +192,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     return record(`GET /api/jobs/{id} (${job.jobType})`, job);
   };
 
-  it("resolves a pasted duplicate to the saved resume", async () => {
+  scenario("resolves a pasted duplicate to the saved resume", async () => {
     const text = resumeText();
     const saved = await paste("First", text);
     const again = record("POST /api/resumes/paste (duplicate)",
@@ -145,7 +200,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(again).toMatchObject({ duplicate: true, resume: { id: saved.id, name: "First" } });
   });
 
-  it("previews and cascades a resume delete", async () => {
+  scenario("previews and cascades a resume delete", async () => {
     const resume = await paste("Backend");
     // Evidence the selected resume lacks, so a real model has a strong match and returns suggestion items.
     const other = await paste("Other", resumeText().replace("Worked on backend services.",
@@ -161,7 +216,8 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     const setJobId = set.activeJob!.jobId;
     const recordedJobIds = [score.jobId, fit.jobId, suggestions.jobId, setJobId];
     await settle([...recordedJobIds, otherSuggestions.jobId]);
-    for (const jobId of recordedJobIds) await readJob(jobId);
+    // The second suggestions job is read too, so suggestion items get two chances to arrive non-empty.
+    for (const jobId of [...recordedJobIds, otherSuggestions.jobId]) await readJob(jobId);
 
     const ready = record("GET /api/practice-sets/{id} (ready)", await readSet(set.id));
     const attempt = record("POST /api/practice-sets/{id}/questions/{id}/attempts",
@@ -190,7 +246,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     }
   });
 
-  it("returns a practice set at once and fills 3-8 questions when its job succeeds", async () => {
+  scenario("returns a practice set at once and fills 3-8 questions when its job succeeds", async () => {
     const resume = await paste("Backend");
     const job = await targetJob();
     const created = await createSet(resume.id, job.id);
@@ -206,7 +262,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(again.id).toBe(created.id);
   });
 
-  it("scores attempts, reports the change, and rejects an unchanged answer", async () => {
+  scenario("scores attempts, reports the change, and rejects an unchanged answer", async () => {
     const resume = await paste("Backend");
     const job = await targetJob();
     const set = await createSet(resume.id, job.id);
@@ -228,17 +284,18 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(attempts[1].scoreDelta).toBe(attempts[1].feedback!.score - attempts[0].feedback!.score);
   });
 
-  it("marks the score stale when the job title changes", async () => {
+  scenario("marks the score stale when the job title changes", async () => {
     const resume = await paste("Backend");
     const score = record("POST /api/resumes/{id}/score", await post<JobAccepted>(`${base}/api/resumes/${resume.id}/score`));
     await settle([score.jobId]);
+    await readJob(score.jobId); // A second chance for resume rewrites to arrive non-empty.
     const updated = record("PATCH /api/resumes/{id}", await apiRequest<Resume>(`${base}/api/resumes/${resume.id}`, {
       method: "PATCH", body: { jobTitle: "Staff Engineer" }
     }));
     expect(updated.latestScore?.stale).toBe(true);
   });
 
-  it("saves, replays, reopens and deletes voice reports without adding text attempts", async () => {
+  scenario("saves, replays, reopens and deletes voice reports without adding text attempts", async () => {
     const resume = await paste("Voice backend");
     const job = await targetJob();
     const set = await createSet(resume.id, job.id);
@@ -277,6 +334,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
   // Runs last, after every scenario above has recorded its shapes. The mock API run writes the file when it is missing;
   // `npm test -u` rewrites it after an intended contract change.
   it("answers with the response shapes in apiShapes.json", async () => {
+    if (passed < registered) throw new Error(`Shapes are compared after every scenario passes; ${passed} of ${registered} did`);
     // An empty declared array records its declared fields, not the API's, so a real API must fill each one at least once.
     if (base) expect([...populated].sort()).toEqual(Object.keys(OPTIONAL_ARRAY_FIELDS).sort());
     await expect(`${JSON.stringify(shapes, null, 2)}\n`).toMatchFileSnapshot("./apiShapes.json");

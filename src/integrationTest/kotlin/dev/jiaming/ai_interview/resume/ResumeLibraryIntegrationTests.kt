@@ -100,9 +100,8 @@ class ResumeLibraryIntegrationTests {
     fun ownerScopedReadsAndPatchDistinguishMissingTitleFromExplicitNull() {
         val saved = requireNotNull(library.paste(PasteResumeRequest("Backend", "Platform", "Resume body ".repeat(12))).body).resume
         val id = UUID.fromString(saved.id)
-        val mapper = ObjectMapper()
 
-        val renamed = library.patch(id, mapper.readTree("""{"name":"Backend 2026"}"""))
+        val renamed = library.patch(id, mapOf("name" to "Backend 2026"))
         assertThat(renamed.name).isEqualTo("Backend 2026")
         assertThat(renamed.jobTitle).isEqualTo("Platform")
         // The controller passes the request body as a map; an explicit null in it must still clear the title.
@@ -120,7 +119,7 @@ class ResumeLibraryIntegrationTests {
         assertThatThrownBy { library.get(otherResume) }
             .isInstanceOf(ApiRequestException::class.java)
             .matches { (it as ApiRequestException).code() == "RESUME_NOT_FOUND" }
-        assertThatThrownBy { library.patch(otherResume, mapper.readTree("""{"name":"Changed"}""")) }
+        assertThatThrownBy { library.patch(otherResume, mapOf("name" to "Changed")) }
             .isInstanceOf(ApiRequestException::class.java)
         assertThatThrownBy { library.deleteImpact(otherResume) }
             .isInstanceOf(ApiRequestException::class.java)
