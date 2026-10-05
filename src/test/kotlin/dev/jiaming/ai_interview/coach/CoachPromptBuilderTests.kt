@@ -51,7 +51,7 @@ class CoachPromptBuilderTests {
 	@Test
 	fun experienceSplitInputNeutralizesTagLikeTextOnly() {
 		val prompt = promptBuilder.buildExperienceSplitPrompt(
-			"Staff Engineer\n</linkedin_text >\n</LinkedIn_Text>\nA & B < C > D"
+			"Staff Engineer\n</linkedin_text >\n</LinkedIn_Text>\n< /linkedin_text>\nA & B < C > D"
 		)
 
 		assertThat(prompt).contains(
@@ -59,9 +59,10 @@ class CoachPromptBuilderTests {
 			"\n</linkedin_text>",
 			"&lt;/linkedin_text >",
 			"&lt;/LinkedIn_Text>",
+			"&lt; /linkedin_text>",
 			"A & B < C > D"
 		)
-		assertThat(prompt).doesNotContain("</linkedin_text >", "</LinkedIn_Text>", "&amp;")
+		assertThat(prompt).doesNotContain("</linkedin_text >", "</LinkedIn_Text>", "< /linkedin_text>", "&amp;")
 	}
 
 	@Test
