@@ -4,19 +4,19 @@ import { recordShape, shapeOf } from "./apiScenarios";
 const optionalResultPaths = [
   "result",
   "result.items",
-  "result.items[].guidance",
-  "result.items[].match",
-  "result.items[].requirement",
+  "result.items[].guidance: string",
+  "result.items[].match: string",
+  "result.items[].requirement: string",
   "result.items[].source",
-  "result.items[].source.id",
-  "result.items[].source.name",
-  "result.items[].source.type",
-  "result.items[].whyItFits",
+  "result.items[].source.id: string",
+  "result.items[].source.name: string",
+  "result.items[].source.type: string",
+  "result.items[].whyItFits: string",
   "result.rewrites",
-  "result.rewrites[].original",
+  "result.rewrites[].original: string",
   "result.rewrites[].placeholders",
-  "result.rewrites[].rewritten",
-  "result.rewrites[].section"
+  "result.rewrites[].rewritten: string",
+  "result.rewrites[].section: string"
 ].sort();
 
 const suggestion = {
@@ -36,6 +36,27 @@ const rewrite = {
 
 it("retains declared paths for optional AI result arrays when empty", () => {
   expect(shapeOf({ result: { items: [], rewrites: [] } }).sort()).toEqual(optionalResultPaths);
+});
+
+it("records the type of every value that is not an object or list", () => {
+  expect(shapeOf({ id: "a", score: 70, stale: false, error: null, job: { attempts: [1] } }).sort())
+    .toEqual(["error: null", "id: string", "job", "job.attempts", "score: number", "stale: boolean"]);
+});
+
+it("holds empty job-fit lists to their declared item fields", () => {
+  expect(shapeOf({ result: { matchedRequirements: [], missingRequirements: [], feedback: [] } }).sort()).toEqual([
+    "result",
+    "result.feedback",
+    "result.feedback[].message: string",
+    "result.feedback[].priority: string",
+    "result.matchedRequirements",
+    "result.matchedRequirements[].evidence: string",
+    "result.matchedRequirements[].requirement: string",
+    "result.missingRequirements",
+    "result.missingRequirements[].guidance: string",
+    "result.missingRequirements[].requirement: string"
+  ]);
+  expect(() => shapeOf({ result: { feedback: [{ priority: "HIGH", message: 3 }] } })).toThrow();
 });
 
 it("reports which optional AI result arrays arrived with items", () => {

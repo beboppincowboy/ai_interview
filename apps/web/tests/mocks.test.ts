@@ -70,6 +70,14 @@ describe("mock API", () => {
       .toThrow(`Runtime failure, not a contract disagreement: RESUME_SCORE job ${accepted.jobId} failed with GEMINI_SAFETY`);
   });
 
+  it("fails a job that never ends at its polling deadline", async () => {
+    const resume = await pasteResume();
+    const accepted = await post<JobAccepted>(`/api/resumes/${resume.id}/score`);
+    // The clock does not move, so the job stays queued.
+    await expect(pollJobs("", { timeoutMs: 50, intervalMs: 10 })([accepted.jobId])).rejects
+      .toThrow(`RESUME_SCORE job ${accepted.jobId} was still QUEUED after 0.05s`);
+  });
+
   it("shows a retrying job before a retryable failure", async () => {
     const resume = await pasteResume();
     store.failNext("RESUME_SCORE");
