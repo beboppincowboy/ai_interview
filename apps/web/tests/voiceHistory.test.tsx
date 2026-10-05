@@ -40,15 +40,24 @@ it("retries a failed report using its replacement job while retaining the saved 
   expect(screen.getByText("A corrected answer")).toBeInTheDocument();
 });
 
-it("requires confirmation before deleting a saved interview", async () => {
+it("requires confirmation before deleting a saved interview and never refetches it afterwards", async () => {
   let deleted = false;
-  server.use(http.get("*/api/voice-sessions/v1", () => HttpResponse.json(session)), http.delete("*/api/voice-sessions/v1", () => { deleted = true; return new HttpResponse(null, { status: 204 }); }));
+  let readsAfterDelete = 0;
+  server.use(
+    http.get("*/api/voice-sessions/v1", () => {
+      if (!deleted) return HttpResponse.json(session);
+      readsAfterDelete++;
+      return HttpResponse.json({ code: "VOICE_SESSION_NOT_FOUND", message: "Not found" }, { status: 404 });
+    }),
+    http.delete("*/api/voice-sessions/v1", () => { deleted = true; return new HttpResponse(null, { status: 204 }); })
+  );
   const { router } = renderRoute("/voice/sessions/v1");
   await userEvent.click(await screen.findByRole("button", { name: "Delete interview" }));
   expect(deleted).toBe(false);
   await userEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
   await waitFor(() => expect(deleted).toBe(true));
   await waitFor(() => expect(router.state.location.pathname).toBe("/history"));
+  expect(readsAfterDelete).toBe(0);
 });
 
 it("keeps the saved transcript visible while polling a temporarily unavailable report", async () => {

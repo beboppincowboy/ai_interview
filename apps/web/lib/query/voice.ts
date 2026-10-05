@@ -51,6 +51,11 @@ export function useDeleteVoiceSession(id: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => deleteVoiceSession(id),
-    onSettled: () => invalidateVoiceSession(client, id)
+    // Removing, not invalidating, keeps the open page from refetching a session that is now gone.
+    onSuccess: () => {
+      client.removeQueries({ queryKey: voiceKeys.session(id) });
+      return client.invalidateQueries({ queryKey: ["history"] });
+    },
+    onError: () => invalidateVoiceSession(client, id)
   });
 }
