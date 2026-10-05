@@ -1,6 +1,5 @@
 package dev.jiaming.ai_interview.voice
 
-import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.coach.AiResumeCoachService
@@ -10,6 +9,8 @@ import dev.jiaming.ai_interview.jobs.JobExecutionContext
 import dev.jiaming.ai_interview.jobs.JobHandler
 import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobType
+import dev.jiaming.ai_interview.practice.AnswerFeedbackResult
+import java.util.UUID
 import org.springframework.stereotype.Component
 import kotlin.math.roundToInt
 
@@ -46,7 +47,7 @@ class VoiceReportJobHandler(
         }
 
         context.stage(JobStage.SCORING_ANSWER)
-        val scored = mutableMapOf<java.util.UUID, VoiceAnswerReport>()
+        val scored = mutableMapOf<UUID, VoiceAnswerReport>()
         session.questions.forEach { question ->
             val answer = answersByQuestion[question.id]?.takeIf { it.answerText.isNotBlank() } ?: return@forEach
             val checkpointField = voiceAnswerCheckpointField(question.id)
@@ -86,8 +87,8 @@ class VoiceReportJobHandler(
         return context.toJson(report)
     }
 
-    private fun dev.jiaming.ai_interview.practice.AnswerFeedbackResult.asReport(
-        questionId: java.util.UUID,
+    private fun AnswerFeedbackResult.asReport(
+        questionId: UUID,
         incomplete: Boolean,
     ) = VoiceAnswerReport(
         questionId, score, summary, nextStep, strengths, gaps, betterAnswerOutline, followUpQuestion, incomplete,

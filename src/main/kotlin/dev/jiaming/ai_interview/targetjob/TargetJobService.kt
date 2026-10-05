@@ -3,6 +3,7 @@ package dev.jiaming.ai_interview.targetjob
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.countPracticeAttempts
+import dev.jiaming.ai_interview.common.countSavedVoiceSessions
 import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
 import java.sql.ResultSet
 import java.time.Instant
@@ -79,7 +80,7 @@ class TargetJobService(
         ) ?: 0
         val attempts = countPracticeAttempts(jdbcTemplate, userId, "target_job_id", targetJobId)
         return TargetJobDeleteImpact(fits = fits, suggestionSets = suggestionSets, practiceSets = practiceSets, attempts = attempts,
-            voiceSessions = dev.jiaming.ai_interview.common.countSavedVoiceSessions(jdbcTemplate, userId, "target_job_id", targetJobId))
+            voiceSessions = countSavedVoiceSessions(jdbcTemplate, userId, "target_job_id", targetJobId))
     }
 
     @Transactional

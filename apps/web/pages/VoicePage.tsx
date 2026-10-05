@@ -11,7 +11,7 @@ import { VOICE_ENABLED } from "@/lib/api/config";
 import { isNotFound } from "@/lib/api/isNotFound";
 import { practiceKeys, usePracticeSet, useRetryPracticeSet } from "@/lib/query/practice";
 import { useFollowJob } from "@/lib/query/useJob";
-import { useVoiceInterview } from "@/lib/voice/useVoiceInterview";
+import { MAX_VOICE_QUESTIONS, useVoiceInterview } from "@/lib/voice/useVoiceInterview";
 
 const route = getRouteApi("/voice/$setId");
 export default function VoicePage() {
@@ -22,7 +22,7 @@ function VoiceInterview({ setId }: { setId: string }) {
   const set = usePracticeSet(setId);
   const retry = useRetryPracticeSet(setId);
   const generation = useFollowJob(set.data?.activeJob, [practiceKeys.set(setId)]);
-  const interview = useVoiceInterview(setId, (set.data?.questions ?? []).filter((question) => question.origin === "AI").slice(0, 6));
+  const interview = useVoiceInterview(setId, (set.data?.questions ?? []).filter((question) => question.origin === "AI").slice(0, MAX_VOICE_QUESTIONS));
   const heading = useRef<HTMLHeadingElement>(null);
   const question = interview.questions[interview.index];
   const answer = interview.answers.find((item) => item.questionId === question?.id);

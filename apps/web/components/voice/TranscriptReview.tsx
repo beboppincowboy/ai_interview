@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { VoiceAnswer, VoiceQuestion, VoiceTranscript } from "@/lib/api/types";
-import { transcriptProblem, type SaveState } from "@/lib/voice/useVoiceInterview";
+import { MAX_ANSWER_CHARS, transcriptProblem, type SaveState } from "@/lib/voice/useVoiceInterview";
 
 type Props = { questions: VoiceQuestion[]; transcript: VoiceTranscript; locked: boolean; saveState: SaveState; discarding: boolean;
   onEdit: (id: string, text: string, interviewerText?: string) => void; onSave: () => void; onDiscard: () => void; onCheck: () => void };
@@ -28,7 +28,7 @@ export function TranscriptReview({ questions, transcript, locked, saveState, dis
           <Textarea id={`interviewer-${question.id}`} value={answer.interviewerText} disabled={locked} onChange={(event) => onEdit(question.id, answer.answerText, event.target.value)} />
         </details> : null}
         <label className="text-sm font-medium" htmlFor={`answer-${question.id}`}>Answer {index + 1}</label>
-        <Textarea id={`answer-${question.id}`} value={answer?.answerText ?? ""} disabled={locked} aria-invalid={(answer?.answerText.length ?? 0) > 4_000} onChange={(event) => onEdit(question.id, event.target.value)} />
+        <Textarea id={`answer-${question.id}`} value={answer?.answerText ?? ""} disabled={locked} aria-invalid={(answer?.answerText.length ?? 0) > MAX_ANSWER_CHARS} onChange={(event) => onEdit(question.id, event.target.value)} />
         <p className="text-xs text-muted-foreground">{answer?.answerText.length ?? 0} / 4,000 characters</p>
       </div>;
     })}

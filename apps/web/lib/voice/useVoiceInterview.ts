@@ -5,14 +5,24 @@ import type { VoiceAnswer, VoiceQuestion, VoiceSession, VoiceTranscript } from "
 import { isNotFound } from "@/lib/api/isNotFound";
 import { friendlyError } from "@/lib/errorMessages";
 import { createVoiceSession, discardVoiceDraft, getVoiceSession, saveVoiceSession, voiceKeys } from "@/lib/query/voice";
-import { LiveVoiceAdapter } from "./liveClient";
+import { keys } from "@/lib/query/library";
+import { DISCONNECTED_MESSAGE, LiveVoiceAdapter } from "./liveClient";
 
 export type InterviewPhase = "ready" | "connecting" | "voice" | "recoverable" | "typed" | "ending" | "review";
 export type SaveState = "idle" | "saving" | "uncertain" | "checking" | "removed";
+/** Mirrors the API's limits (VoiceSessionService), so the page can explain a rejection before sending it. */
+export const MAX_VOICE_QUESTIONS = 6;
+export const MAX_ANSWER_CHARS = 4_000;
+const MAX_TRANSCRIPT_BYTES = 65_536;
+const CONNECTED_MESSAGE = "Voice connected. Answer when you are ready.";
+const TYPING_MESSAGE = "Typing. Your microphone is off.";
+const RUN_ENDED_MESSAGE = "The 20-minute interview has ended. Review and save your answers.";
+const hasText = (answers: VoiceAnswer[]) => answers.some((answer) => answer.answerText.trim() || answer.interviewerText.trim());
+
 export const transcriptBytes = (transcript: VoiceTranscript) => new TextEncoder().encode(JSON.stringify(transcript)).byteLength;
 export function transcriptProblem(transcript: VoiceTranscript) {
-  if (transcript.answers.some((answer) => answer.answerText.length > 4_000)) return "Each answer must be 4,000 characters or fewer. Shorten the answer before saving.";
-  if (transcriptBytes(transcript) > 65_536) return "The transcript exceeds 64 KiB. Shorten the transcript before saving.";
+  if (transcript.answers.some((answer) => answer.answerText.length > MAX_ANSWER_CHARS)) return "Each answer must be 4,000 characters or fewer. Shorten the answer before saving.";
+  if (transcriptBytes(transcript) > MAX_TRANSCRIPT_BYTES) return "The transcript exceeds 64 KiB. Shorten the transcript before saving.";
   if (!transcript.answers.some((answer) => answer.answerText.trim())) return "Add at least one answer before saving.";
   return null;
 }
@@ -39,12 +49,12 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   const leaving = useRef(false);
   const questions = session?.questions ?? preparedQuestions;
   const transcript = { answers };
-  const dirty = answers.some((answer) => answer.answerText.trim() || answer.interviewerText.trim());
+  const dirty = hasText(answers);
   const locked = saveState !== "idle" || discarding;
 
   useBlocker({
     shouldBlockFn: () => !leaving.current && (dirty || saveLock.current) && !window.confirm("Leave this interview? Unsaved text is kept only on this page and will be lost."),
-    enableBeforeUnload: () => !leaving.current && (answersRef.current.some((answer) => answer.answerText.trim() || answer.interviewerText.trim()) || saveLock.current)
+    enableBeforeUnload: () => !leaving.current && (hasText(answersRef.current) || saveLock.current)
   });
   useEffect(() => {
     mounted.current = true;
@@ -83,9 +93,9 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
       onAnswer: (answer) => { if (mounted.current && current === operation.current) updateAnswer(answer); },
       onState: (state, detail) => {
         if (!mounted.current || current !== operation.current) return;
-        if (state === "recoverable") { setPhase("recoverable"); setMessage(detail ?? "Voice disconnected. Your transcript is still here."); }
+        if (state === "recoverable") { setPhase("recoverable"); setMessage(detail ?? DISCONNECTED_MESSAGE); }
         if (state === "speaking") { setPhase("voice"); setMessage("Interviewer speaking. You can interrupt or move to the next question."); }
-        if (state === "listening") { setPhase("voice"); setMessage("Voice connected. Answer when you are ready."); }
+        if (state === "listening") { setPhase("voice"); setMessage(CONNECTED_MESSAGE); }
       }
     });
     media.current = adapter;
@@ -95,10 +105,10 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
       if (!mounted.current || current !== operation.current) { adapter.close(); return; }
       const draft = await ensureSession();
       if (!mounted.current || current !== operation.current) { adapter.close(); return; }
-      if (Date.now() >= Date.parse(draft.runDeadline)) { adapter.close(); setPhase("review"); setMessage("The 20-minute interview has ended. Review and save your answers."); return; }
+      if (Date.now() >= Date.parse(draft.runDeadline)) { adapter.close(); setPhase("review"); setMessage(RUN_ENDED_MESSAGE); return; }
       const question = draft.questions[index];
       await adapter.start(draft.id, question, answersRef.current.find((answer) => answer.questionId === question.id));
-      if (mounted.current && current === operation.current) { setPhase("voice"); setMessage("Voice connected. Answer when you are ready."); }
+      if (mounted.current && current === operation.current) { setPhase("voice"); setMessage(CONNECTED_MESSAGE); }
     } catch {
       if (!mounted.current || current !== operation.current) return;
       adapter.close(); media.current = null;
@@ -119,8 +129,8 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     try {
       const draft = await ensureSession();
       if (!mounted.current || current !== operation.current) return;
-      if (Date.now() >= Date.parse(draft.runDeadline)) { setPhase("review"); setMessage("The 20-minute interview has ended. Review and save your answers."); return; }
-      setPhase("typed"); setMessage("Typing. Your microphone is off.");
+      if (Date.now() >= Date.parse(draft.runDeadline)) { setPhase("review"); setMessage(RUN_ENDED_MESSAGE); return; }
+      setPhase("typed"); setMessage(TYPING_MESSAGE);
     } catch (error) {
       if (mounted.current && current === operation.current) { setPhase("recoverable"); setMessage(friendlyError(error)); }
     }
@@ -138,12 +148,12 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     }
     const nextIndex = index + 1;
     setIndex(nextIndex);
-    if (typed) { setPhase("typed"); setMessage("Typing. Your microphone is off."); return; }
+    if (typed) { setPhase("typed"); setMessage(TYPING_MESSAGE); return; }
     if (!adapter || phase === "recoverable" || !sessionRef.current) { setPhase("recoverable"); setMessage("Continue voice or type your next answer."); return; }
     setPhase("connecting"); setMessage("Connecting the next question…");
     try {
       await adapter.start(sessionRef.current.id, questions[nextIndex]);
-      if (mounted.current && current === operation.current) { setPhase("voice"); setMessage("Voice connected. Answer when you are ready."); }
+      if (mounted.current && current === operation.current) { setPhase("voice"); setMessage(CONNECTED_MESSAGE); }
     } catch {
       if (mounted.current && current === operation.current) { setPhase("recoverable"); setMessage("Voice could not connect. Continue by typing or try voice again."); }
     }
@@ -152,7 +162,7 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   useEffect(() => {
     if (!deadline || phase === "review") return;
     const timer = setTimeout(() => {
-      operation.current++; closeMedia(); setPhase("review"); setMessage("The 20-minute interview has ended. Review and save your answers.");
+      operation.current++; closeMedia(); setPhase("review"); setMessage(RUN_ENDED_MESSAGE);
     }, Math.max(0, Date.parse(deadline) - Date.now()));
     return () => clearTimeout(timer);
   }, [deadline, phase]);
@@ -163,7 +173,7 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   }
   async function openSaved(saved: VoiceSession) {
     client.setQueryData(voiceKeys.session(saved.id), saved);
-    void client.invalidateQueries({ queryKey: ["history"] });
+    void client.invalidateQueries({ queryKey: keys.history });
     leaving.current = true;
     await navigate({ to: "/voice/sessions/$sessionId", params: { sessionId: saved.id } });
   }
@@ -183,11 +193,19 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     }
   }
   async function save() {
-    if (saveLock.current || discarding || !sessionRef.current || transcriptProblem({ answers: answersRef.current })) return;
+    if (saveLock.current || discarding || transcriptProblem({ answers: answersRef.current })) return;
     saveLock.current = true; setSaveState("saving"); setMessage("Saving interview…");
     // The lock holds this exact payload unchanged until GET establishes the outcome.
     const payload = { answers: answersRef.current.map((answer) => ({ ...answer })) };
-    try { const result = await saveVoiceSession(sessionRef.current.id, payload); if (mounted.current) await openSaved(result.session); }
+    // A denied microphone can reach review before any draft exists; create it now so Save is never a silent no-op.
+    let draft: VoiceSession;
+    try { draft = await ensureSession(); }
+    catch (error) {
+      saveLock.current = false;
+      if (mounted.current) { setSaveState("idle"); setMessage(friendlyError(error)); }
+      return;
+    }
+    try { const result = await saveVoiceSession(draft.id, payload); if (mounted.current) await openSaved(result.session); }
     catch { if (mounted.current) await checkSave(); }
   }
   async function discard() {

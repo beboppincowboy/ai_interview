@@ -6,6 +6,8 @@ import { mintVoiceToken } from "@/lib/query/voice";
 import { BrowserVoiceMedia } from "./audioCapture";
 import { VoiceTranscriptBuffer } from "./transcript";
 
+export const DISCONNECTED_MESSAGE = "Voice disconnected. Your transcript is still here.";
+
 export type VoiceConnection = Pick<Session, "sendRealtimeInput" | "sendClientContent" | "close">;
 export type VoiceEvent = Pick<LiveServerMessage, "setupComplete" | "serverContent" | "goAway">;
 export type VoiceCallbacks = { onmessage: (event: VoiceEvent) => void; onerror: () => void; onclose: () => void };
@@ -70,7 +72,7 @@ export class LiveVoiceAdapter {
     this.muted = muted;
     if (muted && this.connection && !this.draining) {
       try { this.connection.sendRealtimeInput({ audioStreamEnd: true }); }
-      catch { this.fail(this.epoch, "Voice disconnected. Your transcript is still here."); }
+      catch { this.fail(this.epoch, DISCONNECTED_MESSAGE); }
     }
   }
 
@@ -109,8 +111,8 @@ export class LiveVoiceAdapter {
           } catch { this.fail(epoch, "Voice playback stopped. Your transcript is still here."); }
           if ((content.turnComplete || content.interrupted) && !this.draining && this.current(epoch)) this.options.onState("listening");
         },
-        onerror: () => this.fail(epoch, "Voice disconnected. Your transcript is still here."),
-        onclose: () => { if (!this.draining) this.fail(epoch, "Voice disconnected. Your transcript is still here."); }
+        onerror: () => this.fail(epoch, DISCONNECTED_MESSAGE),
+        onclose: () => { if (!this.draining) this.fail(epoch, DISCONNECTED_MESSAGE); }
       };
       this.setupTimer = setTimeout(() => this.fail(epoch, "Voice did not become ready. Try again or continue by typing."), 10_000);
       const connecting = (this.options.connect ?? connectLive)(token, callbacks).then((connection) => {
@@ -127,7 +129,7 @@ export class LiveVoiceAdapter {
       this.media.setInput((data) => {
         if (!this.current(epoch) || this.muted || this.draining) return;
         try { this.inputPending = true; connection.sendRealtimeInput({ audio: { data, mimeType: "audio/pcm;rate=16000" } }); }
-        catch { this.fail(epoch, "Voice disconnected. Your transcript is still here."); }
+        catch { this.fail(epoch, DISCONNECTED_MESSAGE); }
       });
       this.rotationTimer = setTimeout(() => this.fail(epoch, "Voice needs a fresh connection. Continue voice to reconnect to this question."), 8 * 60_000);
       this.options.onState("listening");
@@ -165,15 +167,19 @@ export class LiveVoiceAdapter {
     if (this.closed) return;
     this.closed = true;
     this.preparation++;
-    this.finishDrain?.(); this.disconnect(); this.media.close(); this.prepared = false;
+    this.teardown();
     this.options.onState("closed");
+  }
+
+  private teardown() {
+    this.finishDrain?.(); this.disconnect(); this.media.close(); this.prepared = false;
   }
 
   private current(epoch: number) { return !this.closed && epoch === this.epoch; }
   private fail(epoch: number, message: string) {
     if (!this.current(epoch)) return;
     if (this.buffer) this.options.onAnswer(this.buffer.uncertain());
-    this.finishDrain?.(); this.disconnect(); this.media.close(); this.prepared = false;
+    this.teardown();
     this.options.onState("recoverable", message);
   }
   private disconnect() {

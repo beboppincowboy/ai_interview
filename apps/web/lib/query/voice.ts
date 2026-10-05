@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api/client";
+import { keys } from "@/lib/query/library";
 import type { VoiceSaveResult, VoiceSession, VoiceToken, VoiceTranscript } from "@/lib/api/types";
 
 export const voiceKeys = { session: (id: string) => ["voice-session", id] as const };
@@ -34,7 +35,7 @@ export function useVoiceSession(id: string) {
 
 const invalidateVoiceSession = (client: QueryClient, id: string) => Promise.all([
   client.invalidateQueries({ queryKey: voiceKeys.session(id) }),
-  client.invalidateQueries({ queryKey: ["history"] })
+  client.invalidateQueries({ queryKey: keys.history })
 ]);
 
 export function useRetryVoiceReport(id: string) {
@@ -54,7 +55,7 @@ export function useDeleteVoiceSession(id: string) {
     // Removing, not invalidating, keeps the open page from refetching a session that is now gone.
     onSuccess: () => {
       client.removeQueries({ queryKey: voiceKeys.session(id) });
-      return client.invalidateQueries({ queryKey: ["history"] });
+      return client.invalidateQueries({ queryKey: keys.history });
     },
     onError: () => invalidateVoiceSession(client, id)
   });

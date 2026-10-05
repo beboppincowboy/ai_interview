@@ -65,6 +65,18 @@ it("allows early End, review correction and Save with a single answered question
   expect(audio.prepare).not.toHaveBeenCalled();
 });
 
+it("saves answers typed in review after the microphone was denied and no draft existed yet", async () => {
+  const set = await readySet(); const user = userEvent.setup();
+  const { router } = renderRoute(`/voice/${set.id}`);
+  await user.click(await screen.findByRole("button", { name: "Start interview" }));
+  expect(await screen.findByText(/microphone unavailable/i)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "End interview" }));
+  await user.type(screen.getByLabelText("Answer 1"), "Typed in review");
+  await user.click(screen.getByRole("button", { name: "Save interview" }));
+  await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/voice\/sessions\//));
+  expect(store.history().voiceSessions[0].answeredCount).toBe(1);
+});
+
 it("freezes review and Discard after a lost Save reply until GET confirms its outcome", async () => {
   const set = await readySet(); const user = userEvent.setup(); let savedId = ""; let posts = 0; let unavailable = true;
   server.use(
