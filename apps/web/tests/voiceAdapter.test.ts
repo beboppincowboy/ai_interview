@@ -171,3 +171,14 @@ it("plays every PCM part and rotates a connection into explicit recovery", async
   expect(f.state).toHaveBeenLastCalledWith("recoverable", expect.any(String));
   expect(f.media.close).toHaveBeenCalled(); f.adapter.close();
 });
+
+
+it("announces interviewer audio and the return to listening", async () => {
+  const f = fixture();
+  await f.adapter.prepare(); await f.adapter.start("s1", q);
+  f.callbacks[0].onmessage({ serverContent: { modelTurn: { parts: [{ inlineData: { data: "AAA=", mimeType: "audio/pcm;rate=24000" } }] } } });
+  expect(f.state).toHaveBeenLastCalledWith("speaking");
+  f.callbacks[0].onmessage({ serverContent: { turnComplete: true } });
+  expect(f.state).toHaveBeenLastCalledWith("listening");
+  f.adapter.close();
+});

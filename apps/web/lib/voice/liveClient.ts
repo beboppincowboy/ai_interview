@@ -9,7 +9,7 @@ import { VoiceTranscriptBuffer } from "./transcript";
 export type VoiceConnection = Pick<Session, "sendRealtimeInput" | "sendClientContent" | "close">;
 export type VoiceEvent = Pick<LiveServerMessage, "setupComplete" | "serverContent" | "goAway">;
 export type VoiceCallbacks = { onmessage: (event: VoiceEvent) => void; onerror: () => void; onclose: () => void };
-export type VoiceState = "preparing" | "connecting" | "listening" | "ending" | "recoverable" | "closed";
+export type VoiceState = "preparing" | "connecting" | "listening" | "speaking" | "ending" | "recoverable" | "closed";
 export interface VoiceMedia {
   prepare(): Promise<void>;
   setInput(callback: ((data: string) => void) | null): void;
@@ -101,9 +101,13 @@ export class LiveVoiceAdapter {
           if (content.inputTranscription || content.outputTranscription) this.options.onAnswer(this.buffer!.update(content));
           try {
             for (const part of content.modelTurn?.parts ?? []) {
-              if (part.inlineData?.data && part.inlineData.mimeType?.startsWith("audio/pcm") && !this.draining) this.media.play(part.inlineData.data);
+              if (part.inlineData?.data && part.inlineData.mimeType?.startsWith("audio/pcm") && !this.draining) {
+                this.media.play(part.inlineData.data);
+                this.options.onState("speaking");
+              }
             }
           } catch { this.fail(epoch, "Voice playback stopped. Your transcript is still here."); }
+          if ((content.turnComplete || content.interrupted) && !this.draining && this.current(epoch)) this.options.onState("listening");
         },
         onerror: () => this.fail(epoch, "Voice disconnected. Your transcript is still here."),
         onclose: () => { if (!this.draining) this.fail(epoch, "Voice disconnected. Your transcript is still here."); }

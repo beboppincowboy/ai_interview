@@ -1,5 +1,6 @@
 import { Mic, MessageSquareText } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { VOICE_ENABLED } from "@/lib/api/config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { friendlyError } from "@/lib/errorMessages";
@@ -24,11 +25,12 @@ export function ModeChooser({ resumeId, targetJobId, fitReady }: { resumeId: str
           {!fitReady ? <p className="text-xs text-muted-foreground">Available once the job fit is ready.</p> : null}
           {create.isError ? <p role="alert" className="text-sm text-destructive">{friendlyError(create.error)}</p> : null}
         </div>
-        <div className="space-y-3 rounded-xl border bg-muted/40 p-5" aria-disabled="true">
+        <div className="space-y-3 rounded-xl border bg-muted/40 p-5" aria-disabled={!VOICE_ENABLED}>
           <div className="flex items-center gap-2 font-medium text-muted-foreground">
-            <Mic className="size-4" aria-hidden /> Mock interview (voice) <Badge variant="secondary">Coming soon</Badge>
+            <Mic className="size-4" aria-hidden /> Mock interview (voice) {!VOICE_ENABLED ? <Badge variant="secondary">Coming soon</Badge> : null}
           </div>
           <p className="text-sm text-muted-foreground">A spoken interview with a report on your weakest answers.</p>
+          {VOICE_ENABLED ? <Button disabled={!fitReady || create.isPending} onClick={() => create.mutate({ resumeId, targetJobId }, { onSuccess: (set) => void navigate({ to: "/voice/$setId", params: { setId: set.id } }) })}>Start voice practice</Button> : null}
         </div>
       </div>
     </section>
