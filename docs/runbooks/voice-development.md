@@ -119,6 +119,19 @@ What the historical proof showed:
 
 Still human-run: microphone capture, barge-in and hardware cleanup in desktop Chrome and Safari.
 
+### Browser recheck of the final UI, 2026-10-05
+
+Against the voice-enabled mock frontend at `127.0.0.1:33001`, the in-app browser confirmed:
+
+- The mode chooser opens the interview; the idle and typed states show **Microphone off**.
+- Next moves focus to the new question heading; End moves focus to **Review transcript**.
+- Two typed answers survive early End and correction, then Save opens the saved report. History and reload preserve it. The mock report scored 53/100.
+- Start with microphone permission pending can be ended immediately. Adding an answer in review then Save creates the draft on demand and saves it successfully.
+- The saved report fits both 1280 px desktop and 390 px mobile viewports without horizontal overflow.
+- Delete opens the confirmation dialog and Cancel returns to the report. Permanent deletion was not repeated in this recheck.
+
+No browser console errors were recorded on the successful journey. During an earlier idle mock run, the service worker stopped intercepting requests and they reached the inactive Vite API proxy; refreshing the mock app restored interception. These checks exercise the UI with mocks, not real microphone audio. Microphone-on/muted indicators and hardware cleanup still require the Chrome/Safari human check above.
+
 ## Privacy and limits
 
 - No raw audio, token or provider resumption handle is stored. Transcript text is saved only when the candidate presses Save.

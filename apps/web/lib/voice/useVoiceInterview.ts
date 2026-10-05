@@ -43,6 +43,7 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   const creating = useRef<Promise<VoiceSession> | null>(null);
   const answersRef = useRef<VoiceAnswer[]>([]);
   const media = useRef<LiveVoiceAdapter | null>(null);
+  const recoveryMessage = useRef<string | null>(null);
   const operation = useRef(0);
   const mounted = useRef(true);
   const saveLock = useRef(false);
@@ -88,12 +89,13 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     if (saveLock.current || phase === "connecting" || phase === "ending" || phase === "review") return;
     const current = ++operation.current;
     closeMedia();
+    recoveryMessage.current = null;
     setPhase("connecting"); setMessage("Preparing microphone…");
     const adapter = new LiveVoiceAdapter({
       onAnswer: (answer) => { if (mounted.current && current === operation.current) updateAnswer(answer); },
       onState: (state, detail) => {
         if (!mounted.current || current !== operation.current) return;
-        if (state === "recoverable") { setPhase("recoverable"); setMessage(detail ?? DISCONNECTED_MESSAGE); }
+        if (state === "recoverable") { recoveryMessage.current = detail ?? DISCONNECTED_MESSAGE; setPhase("recoverable"); setMessage(recoveryMessage.current); }
         if (state === "speaking") { setPhase("voice"); setMessage("Interviewer speaking. You can interrupt or move to the next question."); }
         if (state === "listening") { setPhase("voice"); setMessage(CONNECTED_MESSAGE); }
       }
@@ -113,7 +115,7 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
       if (!mounted.current || current !== operation.current) return;
       adapter.close(); media.current = null;
       setPhase("recoverable");
-      setMessage("Microphone unavailable or voice could not connect. Your transcript is still here. Try voice again or type instead.");
+      setMessage(recoveryMessage.current ?? "Microphone unavailable or voice could not connect. Your transcript is still here. Try voice again or type instead.");
     }
   }
   async function typeInstead() {
@@ -151,11 +153,12 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     if (typed) { setPhase("typed"); setMessage(TYPING_MESSAGE); return; }
     if (!adapter || phase === "recoverable" || !sessionRef.current) { setPhase("recoverable"); setMessage("Continue voice or type your next answer."); return; }
     setPhase("connecting"); setMessage("Connecting the next question…");
+    recoveryMessage.current = null;
     try {
       await adapter.start(sessionRef.current.id, questions[nextIndex]);
       if (mounted.current && current === operation.current) { setPhase("voice"); setMessage(CONNECTED_MESSAGE); }
     } catch {
-      if (mounted.current && current === operation.current) { setPhase("recoverable"); setMessage("Voice could not connect. Continue by typing or try voice again."); }
+      if (mounted.current && current === operation.current) { setPhase("recoverable"); setMessage(recoveryMessage.current ?? "Voice could not connect. Continue by typing or try voice again."); }
     }
   }
   const deadline = session?.runDeadline;

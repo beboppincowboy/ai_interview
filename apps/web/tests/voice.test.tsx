@@ -163,16 +163,40 @@ it("unmount during a pending microphone request disposes it without creating a s
   expect(creates).toBe(0);
 });
 
-it("token failure retains typed text and typing after recovery does not request another microphone", async () => {
-  const set = await readySet(); audio.prepare.mockResolvedValue(undefined); audio.start.mockRejectedValueOnce(new Error("token unavailable"));
+it("keeps token-failure guidance and typed text, then clears stale guidance on a new attempt", async () => {
+  const set = await readySet(); audio.prepare.mockResolvedValue(undefined);
+  const detail = "This interview has reached its voice connection limit. Continue by typing.";
+  audio.start.mockImplementationOnce(async () => {
+    audio.callbacks.at(-1)!.onState("recoverable", detail);
+    throw new Error("sanitized connection failure");
+  });
   renderRoute(`/voice/${set.id}`);
   await userEvent.click(await screen.findByRole("button", { name: "Type instead" }));
   fireEvent.change(await screen.findByLabelText("Your answer"), { target: { value: "Keep my typed answer" } });
   await userEvent.click(screen.getByRole("button", { name: "Continue voice" }));
-  await screen.findByText(/Microphone unavailable or voice could not connect/);
+  await screen.findByText(detail, {}, { timeout: 1_000 });
   await userEvent.click(screen.getByRole("button", { name: "Type instead" }));
   expect(await screen.findByLabelText("Your answer")).toHaveValue("Keep my typed answer");
   expect(audio.prepare).toHaveBeenCalledTimes(1);
+  audio.start.mockRejectedValueOnce(new Error("another connection failure"));
+  await userEvent.click(screen.getByRole("button", { name: "Continue voice" }));
+  await screen.findByText(/Microphone unavailable or voice could not connect/);
+  expect(screen.queryByText(detail)).not.toBeInTheDocument();
+});
+
+it("keeps the adapter's rate-limit guidance when connecting the next question fails", async () => {
+  const set = await readySet(); audio.prepare.mockResolvedValue(undefined);
+  renderRoute(`/voice/${set.id}`);
+  await userEvent.click(await screen.findByRole("button", { name: "Start interview" }));
+  await screen.findByRole("button", { name: "Mute microphone" });
+  const detail = "Too many requests. Wait a moment, then try again.";
+  audio.start.mockImplementationOnce(async () => {
+    audio.callbacks.at(-1)!.onState("recoverable", detail);
+    throw new Error("sanitized connection failure");
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Next question" }));
+  expect(await screen.findByText(detail, {}, { timeout: 1_000 })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Type instead" })).toBeEnabled();
 });
 
 it("unlocks review only after a failed Save is confirmed DRAFT, then allows a successful retry", async () => {
