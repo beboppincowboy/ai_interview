@@ -8,7 +8,7 @@ afterEach(() => vi.useRealTimers());
 const token: VoiceToken = { token: "test-ephemeral", model: "gemini-3.8-live", apiVersion: "v1beta", expiresAt: "2030-01-01", newSessionExpiresAt: "2030-01-01" };
 const q = { id: "q1", text: "What did you build?", category: null, expectedSignals: [] };
 
-function fixture({ earlySetup = true } = {}) {
+function fixture({ earlySetup = true, failMint = false } = {}) {
   const callbacks: VoiceCallbacks[] = [];
   const connections: VoiceConnection[] = [];
   const answers: VoiceAnswer[] = [];
@@ -16,7 +16,7 @@ function fixture({ earlySetup = true } = {}) {
   const media: VoiceMedia = { prepare: vi.fn().mockResolvedValue(undefined), setInput: vi.fn((callback) => { input = callback; }), play: vi.fn(), flush: vi.fn(), close: vi.fn() };
   const state = vi.fn();
   const adapter = new LiveVoiceAdapter({
-    media, mint: vi.fn().mockResolvedValue(token),
+    media, mint: failMint ? vi.fn().mockRejectedValue(new Error("mint rejected")) : vi.fn().mockResolvedValue(token),
     connect: vi.fn(async (_token, cb) => {
       callbacks.push(cb);
       const connection = { sendRealtimeInput: vi.fn(), sendClientContent: vi.fn(), close: vi.fn() };
@@ -28,6 +28,21 @@ function fixture({ earlySetup = true } = {}) {
   });
   return { adapter, media, callbacks, connections, answers, state, frame: () => input?.("pcm") };
 }
+
+it("does not mark an empty answer incomplete when token mint fails before capture", async () => {
+  const f = fixture({ failMint: true }); await f.adapter.prepare();
+  await expect(f.adapter.start("s1", q)).rejects.toThrow("Your transcript is still here");
+  expect(f.answers).toEqual([]);
+  expect(f.state).toHaveBeenLastCalledWith("recoverable", expect.any(String));
+  f.adapter.close();
+});
+
+it("marks a pending captured tail incomplete when the connection fails", async () => {
+  const f = fixture(); await f.adapter.prepare(); await f.adapter.start("s1", q);
+  f.frame(); f.callbacks[0].onerror();
+  expect(f.answers.at(-1)).toMatchObject({ questionId: "q1", answerText: "", incomplete: true });
+  f.adapter.close();
+});
 
 it("continuously downsamples split 48k frames into the same 16k PCM samples", () => {
   const samples = new Float32Array([0, .3, .6, -.9, -.6, -.3, 1, 1, 1, .4, .4, .4]);

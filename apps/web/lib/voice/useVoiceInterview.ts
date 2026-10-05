@@ -44,6 +44,7 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   const answersRef = useRef<VoiceAnswer[]>([]);
   const media = useRef<LiveVoiceAdapter | null>(null);
   const recoveryMessage = useRef<string | null>(null);
+  const deadlineDrain = useRef(false);
   const operation = useRef(0);
   const mounted = useRef(true);
   const saveLock = useRef(false);
@@ -119,12 +120,12 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     }
   }
   async function typeInstead() {
-    if (phase === "review" || phase === "ending" || saveLock.current) return;
+    if (phase === "review" || phase === "ending" || deadlineDrain.current || saveLock.current) return;
     if (phase === "voice" && media.current) {
       const current = operation.current;
       setPhase("ending"); setMessage("Finishing this answer…");
       await media.current.drain();
-      if (!mounted.current || current !== operation.current) return;
+      if (!mounted.current || current !== operation.current || deadlineDrain.current) return;
     }
     const current = ++operation.current;
     closeMedia(); setPhase("connecting"); setMessage("Preparing your interview…");
@@ -138,13 +139,13 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     }
   }
   async function advance(end = false) {
-    if (phase === "ending" || phase === "review" || saveLock.current) return;
+    if (phase === "ending" || phase === "review" || deadlineDrain.current || saveLock.current) return;
     const current = operation.current;
     const adapter = media.current;
     const typed = phase === "typed";
     setPhase("ending"); setMessage("Finishing this answer…");
     await adapter?.drain();
-    if (!mounted.current || current !== operation.current) return;
+    if (!mounted.current || current !== operation.current || deadlineDrain.current) return;
     if (end || index + 1 >= questions.length) {
       operation.current++; closeMedia(); setPhase("review"); setMessage("Review your transcript. You can correct any answer before saving."); return;
     }
@@ -163,9 +164,17 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   }
   const deadline = session?.runDeadline;
   useEffect(() => {
-    if (!deadline || phase === "review") return;
+    if (!deadline || phase === "review" || deadlineDrain.current) return;
     const timer = setTimeout(() => {
-      operation.current++; closeMedia(); setPhase("review"); setMessage(RUN_ENDED_MESSAGE);
+      if (deadlineDrain.current || !mounted.current) return;
+      deadlineDrain.current = true;
+      const current = operation.current;
+      setPhase("ending"); setMessage("Finishing this answer…");
+      void (async () => {
+        await media.current?.drain();
+        if (!mounted.current || current !== operation.current) return;
+        operation.current++; closeMedia(); setPhase("review"); setMessage(RUN_ENDED_MESSAGE);
+      })();
     }, Math.max(0, Date.parse(deadline) - Date.now()));
     return () => clearTimeout(timer);
   }, [deadline, phase]);

@@ -21,7 +21,7 @@ configure({ asyncUtilTimeout: 5_000 });
 beforeEach(() => {
   audio.callbacks.length = 0;
   audio.prepare.mockRejectedValue(new DOMException("Permission denied", "NotAllowedError"));
-  audio.start.mockResolvedValue(undefined); audio.drain.mockResolvedValue(undefined);
+  audio.start.mockResolvedValue(undefined); audio.drain.mockReset().mockResolvedValue(undefined);
 });
 
 async function readySet() {
@@ -276,6 +276,28 @@ it("closes media at the run deadline and keeps reviewed Save available", async (
   expect(screen.getByRole("button", { name: "Save interview" })).toBeEnabled();
   expect(audio.close).toHaveBeenCalled();
   expect(audio.start).toHaveBeenCalledTimes(1);
+});
+
+it("drains active voice at the run deadline before review and keeps the final callback", async () => {
+  const set = await readySet(); audio.prepare.mockResolvedValue(undefined);
+  let finishDrain!: () => void;
+  audio.drain.mockImplementationOnce(() => new Promise<void>((resolve) => { finishDrain = resolve; }));
+  server.use(http.post("*/api/voice-sessions", () => {
+    const draft = store.createVoiceSession(set.id);
+    return HttpResponse.json({ ...draft, runDeadline: new Date(Date.now() + 1_000).toISOString() });
+  }));
+  renderRoute(`/voice/${set.id}`);
+  await userEvent.click(await screen.findByRole("button", { name: "Start interview" }));
+  await waitFor(() => expect(audio.start).toHaveBeenCalled());
+  await waitFor(() => expect(audio.drain).toHaveBeenCalledTimes(1), { timeout: 2_000 });
+  expect(screen.queryByRole("heading", { name: "Review transcript" })).not.toBeInTheDocument();
+  act(() => audio.callbacks[0].onAnswer({ questionId: set.questions[0].id, interviewerText: "Question", answerText: "Final drain transcript", incomplete: true }));
+  await act(async () => finishDrain());
+  expect(await screen.findByRole("heading", { name: "Review transcript" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Answer 1")).toHaveValue("Final drain transcript");
+  expect(audio.close).toHaveBeenCalled();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(audio.drain).toHaveBeenCalledTimes(1);
 });
 
 

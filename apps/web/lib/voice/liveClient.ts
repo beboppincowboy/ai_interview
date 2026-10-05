@@ -178,7 +178,7 @@ export class LiveVoiceAdapter {
   private current(epoch: number) { return !this.closed && epoch === this.epoch; }
   private fail(epoch: number, message: string) {
     if (!this.current(epoch)) return;
-    if (this.buffer) this.options.onAnswer(this.buffer.uncertain());
+    if (this.buffer && this.inputPending) this.options.onAnswer(this.buffer.uncertain());
     this.teardown();
     this.options.onState("recoverable", message);
   }
