@@ -53,7 +53,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.time.Duration
 import java.net.InetSocketAddress
-import java.net.URI
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
@@ -148,7 +147,7 @@ class VoiceSessionIntegrationTests {
             start()
         }
         try {
-            val tokenClient = GeminiLiveTokenClient(mapper, properties, URI("http://127.0.0.1:${server.address.port}"))
+            val tokenClient = GeminiLiveTokenClient(mapper, properties, "http://127.0.0.1:${server.address.port}")
             val controller = VoiceController(voice, tokenClient, properties)
             val response = controller.mint(session.id, VoiceTokenRequest(session.questions.first().id))
 

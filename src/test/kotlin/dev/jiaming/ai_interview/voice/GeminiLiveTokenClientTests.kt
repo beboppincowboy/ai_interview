@@ -3,7 +3,6 @@ package dev.jiaming.ai_interview.voice
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
-import java.net.URI
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
@@ -11,9 +10,19 @@ import java.util.concurrent.atomic.AtomicReference
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import dev.jiaming.ai_interview.common.ApiRequestException
 
 class GeminiLiveTokenClientTests {
+    @Test
+    fun `spring can construct the client as a component`() {
+        ApplicationContextRunner()
+            .withBean(ObjectMapper::class.java)
+            .withBean(VoiceProperties::class.java, { VoiceProperties(false, null, null, null, null) })
+            .withUserConfiguration(GeminiLiveTokenClient::class.java)
+            .run { context -> assertThat(context).hasNotFailed().hasSingleBean(GeminiLiveTokenClient::class.java) }
+    }
+
     @Test
     fun `mints one v1beta token with server locked Live setup and deadline bounded expiry`() {
         val requestBody = AtomicReference<String>()
@@ -31,7 +40,7 @@ class GeminiLiveTokenClientTests {
         try {
             val properties = VoiceProperties(true, null, null, null, "server-only-key")
             val client = GeminiLiveTokenClient(
-                ObjectMapper(), properties, URI("http://127.0.0.1:${server.address.port}"),
+                ObjectMapper(), properties, "http://127.0.0.1:${server.address.port}",
             )
             val question = VoiceQuestion(UUID.randomUUID(), "Tell me about a difficult tradeoff.", "Judgment", listOf("decision"))
             val deadline = Instant.now().plusSeconds(120)
@@ -136,7 +145,7 @@ class GeminiLiveTokenClientTests {
     }
 
     private fun client(server: HttpServer) = GeminiLiveTokenClient(
-        ObjectMapper(), VoiceProperties(true, null, null, null, "server-only-key"), URI("http://127.0.0.1:${server.address.port}"),
+        ObjectMapper(), VoiceProperties(true, null, null, null, "server-only-key"), "http://127.0.0.1:${server.address.port}",
     )
 
     private fun question() = VoiceQuestion(UUID.randomUUID(), "Tell me about a difficult tradeoff.", null, emptyList())

@@ -21,9 +21,6 @@ class GeminiLiveTokenClient(
     private val properties: VoiceProperties,
     @Value("\${app.voice.token-base-url:https://generativelanguage.googleapis.com}") baseUrl: String,
 ) {
-    internal constructor(objectMapper: ObjectMapper, properties: VoiceProperties, baseUrl: URI) :
-        this(objectMapper, properties, baseUrl.toString())
-
     private val endpoint = URI.create("${baseUrl.trimEnd('/')}/${properties.apiVersion}/auth_tokens")
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(REQUEST_TIMEOUT)
