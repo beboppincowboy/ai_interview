@@ -3,7 +3,7 @@
 // or omit rather than compared whole. Every response they read is recorded as a shape and compared with one committed
 // file, so a field that one side renames or drops fails the run against that side.
 import { afterAll, expect, it } from "vitest";
-import { apiRequest } from "@/lib/api/client";
+import { ApiError, apiRequest } from "@/lib/api/client";
 import type {
   Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, Resume, ResumeCreated, SuggestionsView,
   TargetJobCreated
@@ -21,10 +21,11 @@ export const get = <T,>(path: string) => apiRequest<T>(path, { retries: 0 });
 export const errorOf = (promise: Promise<unknown>) => promise.then(() => null, (error: unknown) => error);
 
 /** A real API's `settle`: polls each job until it ends. A failed job means the API broke at runtime, not contract drift.
- * Each job gets `timeoutMs`, so a job that never ends fails the run with its ID instead of hanging until vitest's timeout. */
-export const pollJobs = (base: string, { timeoutMs = 120_000, intervalMs = 1_000 } = {}) => async (jobIds: string[]) => {
+ * One settle call gets `timeoutMs`, well inside the live suite's 180s test timeout, so a job that never ends fails the
+ * run with its ID instead of hanging until vitest gives up. */
+export const pollJobs = (base: string, { timeoutMs = 75_000, intervalMs = 1_000 } = {}) => async (jobIds: string[]) => {
+  const deadline = Date.now() + timeoutMs;
   for (const jobId of jobIds) {
-    const deadline = Date.now() + timeoutMs;
     for (;;) {
       const job = await get<JobStatusResponse>(`${base}/api/jobs/${jobId}`);
       if (job.status === "SUCCEEDED") break;
@@ -75,6 +76,13 @@ const OPTIONAL_ARRAY_FIELDS: Record<string, string[]> = {
   "result.rewrites": ["original: string", "placeholders", "rewritten: string", "section: string"]
 };
 
+// Model-written text that the contract allows to be null: one run may fill it and the next may not, so either is
+// recorded as the same type.
+const MODEL_NULLABLE_TEXT = new Set(["category", "followUpQuestion", "nextStep", "rationale"]);
+const leafType = (key: string, value: unknown) =>
+  MODEL_NULLABLE_TEXT.has(key) && (value === null || typeof value === "string") ? "string|null"
+    : value === null ? "null" : typeof value;
+
 const sameFields = (a: string[], b: string[]) => a.length === b.length && a.every((field, index) => field === b[index]);
 
 /** Key paths of a JSON value, with the type of each value that is not an object or list (`path: string`). A list
@@ -99,7 +107,7 @@ export function shapeOf(value: unknown, path = "", populated?: Set<string>): str
   if (value === null || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, child]) => {
     const childPath = path ? `${path}.${key}` : key;
-    if (child === null || typeof child !== "object") return [`${childPath}: ${child === null ? "null" : typeof child}`];
+    if (child === null || typeof child !== "object") return [`${childPath}: ${leafType(key, child)}`];
     return [childPath, ...shapeOf(child, childPath, populated)];
   });
 }
@@ -154,10 +162,13 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
       ...[...created.resumes].map((id) => `${base}/api/resumes/${id}`),
       ...[...created.targetJobs].map((id) => `${base}/api/target-jobs/${id}`)
     ];
+    // Every delete is attempted before the first unexpected error is reported, so one failure leaves nothing else behind.
+    const errors = [];
     for (const path of paths) {
-      const error = await errorOf(apiRequest(path, { method: "DELETE", retries: 0 }));
-      if (error && (error as { status?: number }).status !== 404) throw error;
+      const error = await errorOf(apiRequest(path, { method: "DELETE" }));
+      if (error && !(error instanceof ApiError && error.status === 404)) errors.push(error);
     }
+    if (errors.length) throw errors[0];
   });
 
   const paste = async (name: string, text = resumeText()) => {

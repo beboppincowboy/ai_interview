@@ -43,6 +43,12 @@ it("records the type of every value that is not an object or list", () => {
     .toEqual(["error: null", "id: string", "job", "job.attempts", "score: number", "stale: boolean"]);
 });
 
+it("records model-written text the contract allows to be null as one type, filled or not", () => {
+  expect(shapeOf({ category: null, nextStep: "Practise", summary: null })).toEqual(
+    ["category: string|null", "nextStep: string|null", "summary: null"]
+  );
+});
+
 it("holds empty job-fit lists to their declared item fields", () => {
   expect(shapeOf({ result: { matchedRequirements: [], missingRequirements: [], feedback: [] } }).sort()).toEqual([
     "result",
