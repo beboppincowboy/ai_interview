@@ -39,7 +39,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-flyway")
 	implementation("org.flywaydb:flyway-database-postgresql")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
-	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+	implementation("org.springframework.boot:spring-boot-starter-jdbc")
 	implementation("org.springframework.boot:spring-boot-starter-data-redis")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
@@ -52,7 +52,6 @@ dependencies {
 	implementation("software.amazon.awssdk:s3")
 	implementation("software.amazon.awssdk:sqs")
 	runtimeOnly("org.postgresql:postgresql")
-	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
 	testImplementation(kotlin("test"))
 	testImplementation("io.ktor:ktor-client-mock-jvm:3.5.1")
 	testImplementation("org.mockito.kotlin:mockito-kotlin:6.3.0")
@@ -94,6 +93,8 @@ val integrationTestSourceSet = sourceSets.create("integrationTest") {
 }
 
 kotlin.sourceSets.maybeCreate("integrationTest").kotlin.srcDir("src/integrationTest/kotlin")
+// Like the test compilation, integration tests may set main's internal members, e.g. RedisRequestGuard's short TTLs.
+kotlin.target.compilations.getByName("integrationTest").associateWith(kotlin.target.compilations.getByName("main"))
 
 configurations[integrationTestSourceSet.implementationConfigurationName]
 	.extendsFrom(configurations.testImplementation.get())
@@ -101,7 +102,7 @@ configurations[integrationTestSourceSet.runtimeOnlyConfigurationName]
 	.extendsFrom(configurations.testRuntimeOnly.get())
 
 val integrationTest by tasks.registering(Test::class) {
-	description = "Runs PostgreSQL and LocalStack integration tests."
+	description = "Runs PostgreSQL, Redis and LocalStack integration tests."
 	group = "verification"
 	testClassesDirs = integrationTestSourceSet.output.classesDirs
 	classpath = integrationTestSourceSet.runtimeClasspath

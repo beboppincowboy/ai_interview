@@ -180,6 +180,43 @@ describe("LinkedIn experience recovery", () => {
 		expect(splitRequests).toBe(1);
 	});
 
+	it("locks the review dialog while saving and closes after save completes", async () => {
+		clearLinkedInRecovery();
+		let notifySaveStarted = () => {};
+		let releaseSave = () => {};
+		const saveStarted = new Promise<void>((resolve) => { notifySaveStarted = resolve; });
+		server.use(http.post("*/api/experiences/batch", async ({ request }) => {
+			const body = await request.json() as { items: unknown };
+			await new Promise<void>((resolve) => {
+				releaseSave = resolve;
+				notifySaveStarted();
+			});
+			return HttpResponse.json(store.saveExperienceBatch(body.items), { status: 201 });
+		}));
+
+		const user = userEvent.setup();
+		renderRoute("/library/experiences");
+		await openDialog(user);
+		await user.type(screen.getByLabelText("Experience text"), LINKEDIN_TEXT);
+		await user.click(screen.getByRole("button", { name: "Split into items" }));
+		await screen.findByRole("button", { name: "Save 2 items" }, { timeout: 6_000 });
+		await user.click(screen.getByRole("button", { name: "Save 2 items" }));
+		await saveStarted;
+
+		const controlsDisabled = ["Back", "Discard", "Remove Staff Engineer"].every((name) =>
+			(screen.getByRole("button", { name }) as HTMLButtonElement).disabled
+		);
+		await user.keyboard("{Escape}");
+		const remainsOpenAfterEscape = Boolean(screen.queryByRole("dialog"));
+		releaseSave();
+
+		await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+		expect(controlsDisabled).toBe(true);
+		expect(remainsOpenAfterEscape).toBe(true);
+		expect(store.listExperiences().items).toHaveLength(2);
+		expect(readLinkedInRecovery()).toBeNull();
+	});
+
 	it("clears the recovery draft after save or an explicit discard", async () => {
 		clearLinkedInRecovery();
 		const user = userEvent.setup();

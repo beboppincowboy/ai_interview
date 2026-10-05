@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.resume
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.jiaming.ai_interview.common.ApiExceptionHandler
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
 import dev.jiaming.ai_interview.jobs.JobInputRefs
@@ -36,7 +37,8 @@ class ResumeControllerTests {
 	private val scoreService = Mockito.mock(ResumeScoreService::class.java)
 	private val guard = RedisRequestGuard(StringRedisTemplate(), RedisUsageProperties("resume-controller-test:",
 		RedisUsageProperties.RateLimit(false, 60, 12, 20), RedisUsageProperties.Idempotency(false, 86_400)), ObjectMapper())
-	private val mockMvc = standaloneSetup(ResumeController(submissionService, libraryService, scoreService, guard)).build()
+	private val mockMvc = standaloneSetup(ResumeController(submissionService, libraryService, scoreService, guard))
+		.setControllerAdvice(ApiExceptionHandler()).build()
 
 	@Test
 	fun uploadsResumeAndReturnsAcceptedJob() {
@@ -73,6 +75,31 @@ class ResumeControllerTests {
 			.content("""{"name":"Backend","jobTitle":null,"text":"${"x".repeat(100)}"}"""))
 			.andExpect(status().isCreated)
 			.andExpect(jsonPath("$.resume.source").value("PASTE"))
+	}
+
+	@Test
+	fun patchReadsTheBodyWithTheJacksonConverterTheApplicationUses() {
+		val resumeId = UUID.randomUUID()
+		val item = ResumeLibraryItem(resumeId.toString(), "Backend", null, "PASTE", null, "READY", null, null, Instant.now(), Instant.now())
+		Mockito.`when`(libraryService.patch(eq(resumeId), any<Map<String, Any?>>())).thenReturn(item)
+
+		mockMvc.perform(patch("/api/resumes/{id}", resumeId).contentType(MediaType.APPLICATION_JSON)
+			.content("""{"name":"Backend","jobTitle":null}"""))
+			.andExpect(status().isOk)
+			.andExpect(jsonPath("$.name").value("Backend"))
+		// An explicit null still reaches the service, so it clears the job title instead of leaving it unchanged.
+		Mockito.verify(libraryService).patch(resumeId, mapOf("name" to "Backend", "jobTitle" to null))
+	}
+
+	@Test
+	fun patchRejectsABodyThatIsNotAnObject() {
+		val resumeId = UUID.randomUUID()
+		for (body in listOf("""["name"]""", "\"Backend\"", "null")) {
+			mockMvc.perform(patch("/api/resumes/{id}", resumeId).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isBadRequest)
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+		}
+		Mockito.verifyNoInteractions(libraryService)
 	}
 
 	@Test

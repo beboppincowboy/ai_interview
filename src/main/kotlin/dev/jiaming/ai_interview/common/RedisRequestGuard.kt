@@ -3,12 +3,8 @@ package dev.jiaming.ai_interview.common
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
-import java.security.NoSuchAlgorithmException
 import java.time.Duration
 import java.time.Instant
-import java.util.HexFormat
 import java.util.UUID
 import java.util.function.Supplier
 import java.util.concurrent.ScheduledFuture
@@ -45,7 +41,7 @@ class RedisRequestGuard(
         if (!properties.idempotency.enabled) return work.get()
         val idempotencyKey = idempotencyKey() ?: return work.get()
         val requestFingerprint = fingerprint(action, requestFingerprintSource)
-        val redisKey = key("idem:%s:%s:%s".format(action, clientId(), sha256(idempotencyKey)))
+        val redisKey = key("idem:%s:%s:%s".format(action, clientId(), sha256Hex(idempotencyKey)))
         val ttl = Duration.ofSeconds(properties.idempotency.ttlSeconds.toLong())
         val reservationValue = "$requestFingerprint $RESERVATION_MARKER${UUID.randomUUID()}"
 
@@ -209,16 +205,9 @@ class RedisRequestGuard(
     private fun sanitize(value: String) = value.replace(UNSAFE_KEY_CHARACTERS, "_")
 
     private fun fingerprint(action: String, requestFingerprintSource: Any?): String = try {
-        sha256(objectMapper.writeValueAsString(java.util.List.of(action, requestFingerprintSource)))
+        sha256Hex(objectMapper.writeValueAsString(java.util.List.of(action, requestFingerprintSource)))
     } catch (exception: JsonProcessingException) {
-        sha256("$action:$requestFingerprintSource")
-    }
-
-    private fun sha256(value: String): String = try {
-        val digest = MessageDigest.getInstance("SHA-256")
-        HexFormat.of().formatHex(digest.digest(value.toByteArray(StandardCharsets.UTF_8)))
-    } catch (exception: NoSuchAlgorithmException) {
-        throw IllegalStateException("SHA-256 is unavailable", exception)
+        sha256Hex("$action:$requestFingerprintSource")
     }
 
     private fun key(suffix: String) = properties.keyPrefix + suffix
@@ -226,7 +215,7 @@ class RedisRequestGuard(
     @JvmRecord
     private data class CachedHttpResponse(val status: Int, val body: JsonNode?)
 
-    private companion object {
+    internal companion object {
         val log = LoggerFactory.getLogger(RedisRequestGuard::class.java)
         val UNSAFE_KEY_CHARACTERS = Regex("[^A-Za-z0-9._:-]")
         // ponytail: one thread serializes renewals; use a bounded pool if heartbeat lag approaches the two-minute lease.

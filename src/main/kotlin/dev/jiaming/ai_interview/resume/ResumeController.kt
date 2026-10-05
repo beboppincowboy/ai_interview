@@ -1,6 +1,5 @@
 package dev.jiaming.ai_interview.resume
 
-import com.fasterxml.jackson.databind.JsonNode
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.jobs.JobAcceptedResponse
 import dev.jiaming.ai_interview.score.ResumeScoreService
@@ -45,7 +44,8 @@ class ResumeController(
     fun get(@PathVariable resumeId: UUID): ResumeLibraryDetail = resumeLibraryService.get(resumeId)
 
     @PatchMapping("/{resumeId}", consumes = [MediaType.APPLICATION_JSON_VALUE])
-    fun patch(@PathVariable resumeId: UUID, @RequestBody body: JsonNode): ResumeLibraryItem = resumeLibraryService.patch(resumeId, body)
+    // A map, not a JsonNode: Spring Boot reads request bodies with Jackson 3, which cannot build the Jackson 2 tree type.
+    fun patch(@PathVariable resumeId: UUID, @RequestBody body: Map<String, Any?>): ResumeLibraryItem = resumeLibraryService.patch(resumeId, body)
 
     @PostMapping("/{resumeId}/score")
     @ResponseStatus(HttpStatus.ACCEPTED)

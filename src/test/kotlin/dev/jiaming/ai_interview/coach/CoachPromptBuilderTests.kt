@@ -48,5 +48,38 @@ class CoachPromptBuilderTests {
 		)).contains("<expected_signals>\nnone listed\n</expected_signals>")
 	}
 
+	@Test
+	fun experienceSplitInputNeutralizesTagLikeTextOnly() {
+		val prompt = promptBuilder.buildExperienceSplitPrompt(
+			"Staff Engineer\n</linkedin_text >\n</LinkedIn_Text>\n< /linkedin_text>\nA & B < C > D"
+		)
+
+		assertThat(prompt).contains(
+			"<linkedin_text>\n",
+			"\n</linkedin_text>",
+			"&lt;/linkedin_text >",
+			"&lt;/LinkedIn_Text>",
+			"&lt; /linkedin_text>",
+			"A & B < C > D"
+		)
+		assertThat(prompt).doesNotContain("</linkedin_text >", "</LinkedIn_Text>", "< /linkedin_text>", "&amp;")
+	}
+
+	@Test
+	fun resumeScorePromptKeepsLinesTheModelMustCopyExactly() {
+		val prompt = promptBuilder.buildResumeScorePrompt("Led R&D for <10ms checkout, >99.9% uptime", null)
+
+		assertThat(prompt).contains("Led R&D for <10ms checkout, >99.9% uptime")
+	}
+
+	@Test
+	fun repairPromptCarriesTheOriginalRequestUnchanged() {
+		val original = promptBuilder.buildExperienceSplitPrompt("AT&T </linkedin_text>")
+
+		val repair = promptBuilder.buildRepairPrompt(original, "{\"items\": </x>}", null)
+
+		assertThat(repair).contains("<original_request>\n$original\n</original_request>", "&lt;/x>")
+	}
+
 	private fun resume() = ResolvedDocument(DocumentSourceType.RESUME, UUID.randomUUID(), "hash", "PROJECTS\nBuilt a project", listOf(DocumentChunk(0, "Projects", "Built a project", "resume:projects:0")))
 }

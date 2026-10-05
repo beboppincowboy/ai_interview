@@ -1,11 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { apiRequest } from "@/lib/api/client";
-import type {
-  Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, ResumeCreated, ResumeDetail,
-  ResumeExtractionResult, TargetJobCreated
-} from "@/lib/api/types";
+import type { JobAccepted, JobStatusResponse, ResumeCreated, ResumeDetail, ResumeExtractionResult, TargetJobCreated } from "@/lib/api/types";
 import { createMockServer } from "@/mocks/server";
 import { createMockStore, type MockStoreOptions } from "@/mocks/store";
+import { errorOf, get, pollJobs, post, registerApiScenarios } from "./apiScenarios";
 
 let clock = Date.parse("2026-09-28T12:00:00Z");
 const timing: MockStoreOptions = { now: () => clock, queuedMs: 100, stageMs: 100 };
@@ -18,9 +15,6 @@ afterAll(() => server.close());
 
 const RESUME_TEXT = "Sample resume text. ".repeat(10);
 const JOB_TEXT = "Sample job description for a backend engineer. ".repeat(5);
-const post = <T,>(path: string, body: unknown = {}) => apiRequest<T>(path, { method: "POST", body, retries: 0 });
-const get = <T,>(path: string) => apiRequest<T>(path, { retries: 0 });
-const errorOf = (promise: Promise<unknown>) => promise.then(() => null, (error: unknown) => error);
 
 async function pasteResume(name = "Backend", text = RESUME_TEXT) {
   return (await post<ResumeCreated>("/api/resumes/paste", { name, jobTitle: null, text })).resume;
@@ -31,11 +25,10 @@ async function targetJob() {
 }
 
 describe("mock API", () => {
-  it("resolves a pasted duplicate to the saved resume", async () => {
-    const saved = await pasteResume("First");
-    const again = await post<ResumeCreated>("/api/resumes/paste", { name: "Second", jobTitle: null, text: `  ${RESUME_TEXT}  ` });
-    expect(again).toMatchObject({ duplicate: true, resume: { id: saved.id, name: "First" } });
-  });
+  // The scenarios liveApi.test.ts also runs against a real API. Here every job finishes when the clock jumps.
+  registerApiScenarios({ base: "", settle: async () => finishJobs() });
+
+  // The rest need mock-only controls (store uploads, forced failures, the clock, storage) or an empty database.
 
   // Upload rules are tested on the store: jsdom's File loses its name inside the fetch FormData, so multipart
   // parsing in the handler is covered by the browser smoke run instead.
@@ -58,70 +51,6 @@ describe("mock API", () => {
     expect(() => store.uploadResume({ ...file, fileName: "cv.png" })).toThrow(expect.objectContaining({ code: "UNSUPPORTED_FILE_TYPE" }));
   });
 
-  it("previews and cascades a resume delete", async () => {
-    const resume = await pasteResume();
-    const other = await pasteResume("Other", `${RESUME_TEXT} other`);
-    const job = await targetJob();
-    await post(`/api/resumes/${resume.id}/score`);
-    await post(`/api/resumes/${resume.id}/target-jobs/${job.id}/fit`);
-    await post(`/api/resumes/${resume.id}/target-jobs/${job.id}/suggestions`);
-    await post(`/api/resumes/${other.id}/target-jobs/${job.id}/suggestions`);
-    const set = await post<PracticeSet>("/api/practice-sets", { resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" });
-    finishJobs();
-    const ready = await get<PracticeSet>(`/api/practice-sets/${set.id}`);
-    await post(`/api/practice-sets/${set.id}/questions/${ready.questions[0].id}/attempts`, { text: "My first answer" });
-
-    const preview = await get<DeleteImpact>(`/api/resumes/${resume.id}/delete-impact`);
-    expect(preview).toEqual({ scores: 1, fits: 1, suggestionSets: 1, practiceSets: 1, attempts: 1, staleSuggestionSets: 1 });
-
-    await apiRequest(`/api/resumes/${resume.id}`, { method: "DELETE" });
-    expect(await errorOf(get(`/api/resumes/${resume.id}`))).toMatchObject({ code: "RESUME_NOT_FOUND" });
-    expect(await errorOf(get(`/api/practice-sets/${set.id}`))).toMatchObject({ code: "PRACTICE_SET_NOT_FOUND" });
-    expect(await errorOf(get(`/api/jobs/${set.activeJob!.jobId}`))).toMatchObject({ code: "JOB_NOT_FOUND" });
-    const suggestions = await get<{ stale: boolean }>(`/api/resumes/${other.id}/target-jobs/${job.id}/suggestions`);
-    expect(suggestions.stale).toBe(true);
-    const history = await get<History>("/api/history");
-    expect(history.resumes.map((item) => item.id)).toEqual([other.id]);
-    expect(history.practiceSets).toEqual([]);
-  });
-
-  it("returns a practice set at once and fills 3-8 questions when its job succeeds", async () => {
-    const resume = await pasteResume();
-    const job = await targetJob();
-    const body = { resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" };
-    const created = await post<PracticeSet>("/api/practice-sets", body);
-    expect(created).toMatchObject({ status: "GENERATING", questions: [], activeJob: { jobType: "PRACTICE_QUESTIONS" } });
-
-    finishJobs();
-    const ready = await get<PracticeSet>(`/api/practice-sets/${created.id}`);
-    expect(ready.status).toBe("READY");
-    expect(ready.questions.length).toBeGreaterThanOrEqual(3);
-    expect(ready.questions.length).toBeLessThanOrEqual(8);
-    expect(ready.questions[0].rationale).toBeTruthy();
-    expect((await post<PracticeSet>("/api/practice-sets", body)).id).toBe(created.id);
-  });
-
-  it("scores attempts, reports the change, and rejects an unchanged answer", async () => {
-    const resume = await pasteResume();
-    const job = await targetJob();
-    const set = await post<PracticeSet>("/api/practice-sets", { resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" });
-    finishJobs();
-    const question = (await get<PracticeSet>(`/api/practice-sets/${set.id}`)).questions[0];
-    const path = `/api/practice-sets/${set.id}/questions/${question.id}/attempts`;
-
-    await post<Attempt>(path, { text: "Short answer" });
-    finishJobs();
-    expect(await errorOf(post(path, { text: " Short answer " }))).toMatchObject({ status: 409, code: "ANSWER_UNCHANGED" });
-    expect(await errorOf(post(path, { text: "   " }))).toMatchObject({ status: 400, code: "ANSWER_EMPTY" });
-
-    const second = await post<Attempt>(path, { text: "A much longer answer with context, the action I took and a measured result." });
-    expect(second).toMatchObject({ number: 2, status: "PENDING" });
-    finishJobs();
-    const attempts = (await get<PracticeSet>(`/api/practice-sets/${set.id}`)).questions[0].attempts;
-    expect(attempts.map((attempt) => attempt.status)).toEqual(["SCORED", "SCORED"]);
-    expect(attempts[1].scoreDelta).toBe(attempts[1].feedback!.score - attempts[0].feedback!.score);
-  });
-
   it("fails a forced job with the documented error shape and keeps the attempt for retry", async () => {
     const resume = await pasteResume();
     store.failNext("RESUME_SCORE", { retryable: false });
@@ -130,6 +59,23 @@ describe("mock API", () => {
     const job = await get<JobStatusResponse>(`/api/jobs/${accepted.jobId}`);
     expect(job).toMatchObject({ status: "FAILED", attempts: 1, maxAttempts: 3, result: null });
     expect(job.error).toEqual({ code: "GEMINI_SAFETY", message: "Simulated failure", retryable: false });
+  });
+
+  it("reports a failed job as a runtime failure when settling against a real API", async () => {
+    const resume = await pasteResume();
+    store.failNext("RESUME_SCORE", { retryable: false });
+    const accepted = await post<JobAccepted>(`/api/resumes/${resume.id}/score`);
+    finishJobs();
+    await expect(pollJobs("")([accepted.jobId])).rejects
+      .toThrow(`Runtime failure, not a contract disagreement: RESUME_SCORE job ${accepted.jobId} failed with GEMINI_SAFETY`);
+  });
+
+  it("fails a job that never ends at its polling deadline", async () => {
+    const resume = await pasteResume();
+    const accepted = await post<JobAccepted>(`/api/resumes/${resume.id}/score`);
+    // The clock does not move, so the job stays queued.
+    await expect(pollJobs("", { timeoutMs: 50, intervalMs: 10 })([accepted.jobId])).rejects
+      .toThrow(`RESUME_SCORE job ${accepted.jobId} was still QUEUED after 0.05s`);
   });
 
   it("shows a retrying job before a retryable failure", async () => {
@@ -163,16 +109,6 @@ describe("mock API", () => {
     expect(reloaded.getJob(pending.jobId).status).toBe("QUEUED");
     finishJobs();
     expect(reloaded.getJob(pending.jobId).status).toBe("SUCCEEDED");
-  });
-
-  it("marks the score stale when the job title changes", async () => {
-    const resume = await pasteResume();
-    await post(`/api/resumes/${resume.id}/score`);
-    finishJobs();
-    const updated = await apiRequest<{ latestScore: { stale: boolean } }>(`/api/resumes/${resume.id}`, {
-      method: "PATCH", body: { jobTitle: "Staff Engineer" }
-    });
-    expect(updated.latestScore.stale).toBe(true);
   });
 
   it("refuses suggestions without other sources", async () => {
