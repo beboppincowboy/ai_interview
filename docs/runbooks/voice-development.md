@@ -23,6 +23,29 @@ Local example:
 VOICE_ENABLED=true SERVER_ADDRESS=127.0.0.1 ./gradlew bootRun
 ```
 
+### Isolated Compose stack
+
+`docker-compose.voice.yml` runs the full app with voice on, beside the default stack:
+
+```sh
+docker compose -p ai-interview-voice -f docker-compose.yml -f docker-compose.voice.yml --profile app up --build -d --wait
+```
+
+- **Isolation:** its own project name, volumes and container names.
+- **Ports:** all on `127.0.0.1` (web `33000`, PostgreSQL `35432`, Redis `36380`, LocalStack `34566`). Check they are free first.
+- **API binding:** the API container listens on `0.0.0.0` only because its port is never published; nginx in the web container is the one way in.
+- **Default stack:** `docker-compose.yml` alone stays voice-off, and the web image builds with `VITE_VOICE_ENABLED=false` unless this override sets it.
+
+Stop it with the same `-p` and `-f` flags and `stop`. Use `down -v` only when you mean to delete its database.
+
+### Supabase
+
+Apply nothing here until the owner has confirmed V19 and V20 on the Supabase development project and `bootstrap-runtime` has run. Then set `VOICE_ENABLED=true` and `SERVER_ADDRESS` on the API, and `VITE_VOICE_ENABLED=true` on the web build, in your own untracked override layered over `docker-compose.supabase.yml`. Do not edit that Compose file for voice.
+
+### Turning it off
+
+Set `VOICE_ENABLED=false` (or drop the override) and rebuild the web image without `VITE_VOICE_ENABLED`. New sessions and tokens then answer `503 VOICE_DISABLED`, and the voice card reads "Coming soon". Saved interviews stay readable in history, and Delete still works. Text practice is unaffected. Unsaved drafts live only in the open page, so turning voice off loses nothing that was saved; abandoned drafts are removed once they expire after 24 hours.
+
 ## Provider proof
 
 `apps/web/scripts/voice-live-proof.mjs` checks the Live contract with real calls. It makes paid-account or free-tier calls, so it is opt-in and never runs in CI. It does four things:
@@ -36,9 +59,41 @@ cd apps/web
 node --env-file=../../.env scripts/voice-live-proof.mjs
 ```
 
+To prove the application's token endpoint instead, point it at a running voice stack and a practice set with generated questions. This mode needs no key in the script's environment. It creates a draft, mints every token through `POST /api/voice-sessions/{id}/tokens`, and discards the draft at the end. Its expired-token check waits out the app's 60-second start window.
+
+```sh
+cd apps/web
+VOICE_APP_URL=http://127.0.0.1:33000 VOICE_PRACTICE_SET_ID=<practice set id> node scripts/voice-live-proof.mjs
+```
+
+### Agent-run application-endpoint proof, 2026-10-05
+
+Against the isolated Compose stack, with tokens minted only by the API, all eight checks passed on `v1beta`:
+- draft creation;
+- minting;
+- synthetic speech producing both transcriptions and 24 kHz PCM;
+- single-use rejection;
+- expired-start rejection after the 60-second window;
+- locked instruction and modality;
+- a wrong client model still producing the locked question;
+- discarding the draft.
+
+The interviewer read the session's canonical first question.
+
+### Agent-run local journey, 2026-10-05
+
+On the isolated stack, in a browser with the microphone blocked, these passed:
+- **Voice session:** voice entry; Start showing microphone recovery with the transcript kept; typed answers for two of five questions; early End; correcting an answer in review; Save.
+- **Worker restart:** with the worker stopped, Save queued the report job. After a restart the job completed and the report showed 65/100, the mean of 80 and 50, scored by `gpt-4.1-mini`.
+- **After saving:** history listed it; it reloaded; Delete removed it with no console errors.
+- **Voice off:** the same stack refused new sessions and tokens with `503 VOICE_DISABLED` and kept the saved report readable.
+- **Live API suite:** 7 of 7 with voice on. With voice off, the 6 text checks passed and the voice scenario was skipped.
+
+**Worker restart delay:** a worker killed while long-polling SQS can take the next message with it. That message stays invisible for the 300-second visibility timeout, then is redelivered (`receiveCount=2`). A report saved just after a hard worker stop can therefore take about five minutes to arrive.
+
 ### Agent-run beta proof, 2026-10-04
 
-The strengthened script passed all six checks with `gemini-3.8-live`, SDK `2.27.0` and `v1beta`: constrained minting, synthetic speech with both transcriptions and 24 kHz PCM, single-use rejection, expired-start rejection, locked instruction/modality, and a wrong client model producing the locked question in audio. The four-second mid-answer pause produced no interviewer response. This proves the scripted provider seam; it does not establish browser microphone acceptance or the application token endpoint.
+The strengthened script passed all six checks with `gemini-3.8-live`, SDK `2.27.0` and `v1beta`: constrained minting, synthetic speech with both transcriptions and 24 kHz PCM, single-use rejection, expired-start rejection, locked instruction/modality, and a wrong client model producing the locked question in audio. The four-second mid-answer pause produced no interviewer response. This proves the scripted provider seam; it does not establish browser microphone acceptance. The application-endpoint proof above covers the API's token endpoint.
 
 The SDK still prints its experimental-token and alpha-version warnings. The beta run above passed without an alpha fallback. Speech recognition rendered "queue age" as "QH", so transcript correction remains necessary.
 
