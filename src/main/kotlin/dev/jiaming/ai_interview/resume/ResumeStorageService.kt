@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.resume
 
 import dev.jiaming.ai_interview.storage.ObjectStorageService
+import dev.jiaming.ai_interview.storage.StoredObjectPage
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -31,13 +32,17 @@ class ResumeStorageService(objectStorageServiceProvider: ObjectProvider<ObjectSt
 
     fun delete(storageKey: String) { objectStorageService?.delete(storageKey) }
 
+    /** One page of stored resume objects; empty when object storage is not configured. */
+    fun listObjects(startAfter: String?, maxKeys: Int): StoredObjectPage =
+        objectStorageService?.list(KEY_PREFIX, startAfter, maxKeys) ?: StoredObjectPage(emptyList(), false)
+
     fun markReady(storageKey: String) {
         val storage = objectStorageService
             ?: throw IllegalStateException("Object storage is required for asynchronous resume extraction")
         storage.tag(storageKey, mapOf("processing-status" to "ready"))
     }
 
-    private fun storageKey(filename: String?) = "resumes/%s/%s".format(UUID.randomUUID(), safeFilename(filename))
+    private fun storageKey(filename: String?) = "%s%s/%s".format(KEY_PREFIX, UUID.randomUUID(), safeFilename(filename))
 
     private fun safeFilename(filename: String?): String {
         if (filename.isNullOrBlank()) return "resume"
@@ -46,4 +51,8 @@ class ResumeStorageService(objectStorageServiceProvider: ObjectProvider<ObjectSt
 
     private fun safeMetadata(value: String?) = if (value.isNullOrBlank()) "unknown"
         else value.replace(Regex("[^\\x20-\\x7E]"), "_")
+
+    private companion object {
+        const val KEY_PREFIX = "resumes/"
+    }
 }

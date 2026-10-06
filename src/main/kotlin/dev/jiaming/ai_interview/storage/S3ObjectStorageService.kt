@@ -19,6 +19,7 @@ import software.amazon.awssdk.services.s3.model.HeadBucketRequest
 import software.amazon.awssdk.services.s3.model.LifecycleExpiration
 import software.amazon.awssdk.services.s3.model.LifecycleRule
 import software.amazon.awssdk.services.s3.model.LifecycleRuleFilter
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException
 import software.amazon.awssdk.services.s3.model.PutBucketLifecycleConfigurationRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
@@ -76,6 +77,18 @@ class S3ObjectStorageService(private val s3Client: S3Client, private val propert
                 PutObjectTaggingRequest.builder().bucket(bucket()).key(key)
                     .tagging(Tagging.builder().tagSet(toTags(tags)).build()).build()
             )
+        } catch (exception: S3Exception) {
+            throw storageUnavailable(exception)
+        }
+    }
+
+    override fun list(prefix: String, startAfter: String?, maxKeys: Int): StoredObjectPage {
+        ensureBucket()
+        try {
+            val request = ListObjectsV2Request.builder().bucket(bucket()).prefix(prefix).maxKeys(maxKeys)
+            if (startAfter != null) request.startAfter(startAfter)
+            val response = s3Client.listObjectsV2(request.build())
+            return StoredObjectPage(response.contents().map { StoredObjectSummary(it.key(), it.lastModified()) }, response.isTruncated == true)
         } catch (exception: S3Exception) {
             throw storageUnavailable(exception)
         }
