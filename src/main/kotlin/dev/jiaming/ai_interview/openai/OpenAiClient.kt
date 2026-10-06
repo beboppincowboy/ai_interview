@@ -22,7 +22,9 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * OpenAI chat on gpt-4.1-mini only, behind the same JSON contract as Gemini, selected with AI_CHAT_PROVIDER=openai.
+ * OpenAI chat behind the same JSON contract as Gemini, selected with AI_CHAT_PROVIDER=openai. OPENAI_MODEL picks the model
+ * (gpt-4.1-mini by default). Reasoning models reject a custom temperature, so setting OPENAI_REASONING_EFFORT sends that
+ * effort and leaves temperature out.
  * Failures reuse the GEMINI_* codes so retries, the repair attempt and the API's error codes behave exactly as with Gemini.
  * Embeddings stay on Gemini, so stored vectors keep their model and 1,024 dimensions.
  */
@@ -36,7 +38,9 @@ class OpenAiClient(
     private val apiKey: String?,
     private val temperature: Double,
     private val requestTimeout: Duration,
-    private val maxOutputTokens: Int
+    private val maxOutputTokens: Int,
+    private val model: String = DEFAULT_MODEL,
+    private val reasoningEffort: String = ""
 ) : StructuredGenerationClient {
     @Autowired
     constructor(objectMapper: ObjectMapper, environment: Environment, meterRegistry: MeterRegistry) : this(
@@ -47,7 +51,9 @@ class OpenAiClient(
         environment.getProperty("app.openai.api-key", ""),
         environment.getProperty("app.openai.temperature", Double::class.javaObjectType, 0.2),
         Duration.ofSeconds(environment.getProperty("app.openai.request-timeout-seconds", Long::class.javaObjectType, 90L)),
-        environment.getProperty("app.openai.max-output-tokens", Int::class.javaObjectType, 4096)
+        environment.getProperty("app.openai.max-output-tokens", Int::class.javaObjectType, 4096),
+        environment.getProperty("app.openai.model", "").ifBlank { DEFAULT_MODEL },
+        environment.getProperty("app.openai.reasoning-effort", "").trim()
     )
 
     override fun generateJson(prompt: String): String {
@@ -77,18 +83,17 @@ class OpenAiClient(
     }
 
     // JSON mode makes the model return one JSON object; every prompt already asks for JSON, which this mode requires.
-    private fun requestBody(prompt: String): String = objectMapper.writeValueAsString(mapOf(
-        "model" to MODEL,
+    private fun requestBody(prompt: String): String = objectMapper.writeValueAsString(linkedMapOf(
+        "model" to model,
         "messages" to listOf(mapOf("role" to "user", "content" to prompt)),
         "response_format" to mapOf("type" to "json_object"),
-        "temperature" to temperature,
         "max_completion_tokens" to maxOutputTokens
-    ))
+    ).apply { if (reasoningEffort.isEmpty()) put("temperature", temperature) else put("reasoning_effort", reasoningEffort) })
 
     private fun httpFailure(statusCode: Int, body: String): GeminiException {
         // OpenAI's error code only (e.g. rate_limit_exceeded, insufficient_quota); never the prompt or the full body.
         val reason = runCatching { objectMapper.readTree(body).path("error").path("code").asText("") }.getOrDefault("")
-        log.warn("openai_request_rejected model={} status={} reason={}", MODEL, statusCode, reason)
+        log.warn("openai_request_rejected model={} status={} reason={}", model, statusCode, reason)
         // An exhausted balance does not recover on retry; a per-minute limit does.
         return if (statusCode == 429) GeminiException(GeminiErrorCode.RATE_LIMITED, "OpenAI rate limit exceeded", statusCode, reason != "insufficient_quota")
         else GeminiException(GeminiErrorCode.UPSTREAM_ERROR, "OpenAI request failed", statusCode, statusCode == 408 || statusCode >= 500)
@@ -114,15 +119,14 @@ class OpenAiClient(
 
     private fun recordCall(outcome: String, startedAt: Long) {
         val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-        meterRegistry.counter("ai.openai.calls", "outcome", outcome, "model", MODEL).increment()
-        meterRegistry.timer("ai.openai.duration", "outcome", outcome, "model", MODEL).record(Duration.ofMillis(elapsed))
-        log.info("openai_request_complete model={} outcome={} elapsedMs={}", MODEL, outcome, elapsed)
+        meterRegistry.counter("ai.openai.calls", "outcome", outcome, "model", model).increment()
+        meterRegistry.timer("ai.openai.duration", "outcome", outcome, "model", model).record(Duration.ofMillis(elapsed))
+        log.info("openai_request_complete model={} outcome={} elapsedMs={}", model, outcome, elapsed)
     }
 
     private companion object {
         val log = LoggerFactory.getLogger(OpenAiClient::class.java)
         const val DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
-        // Fixed, not configurable: the OpenAI account is lent on the condition that only this model runs on it.
-        const val MODEL = "gpt-4.1-mini"
+        const val DEFAULT_MODEL = "gpt-4.1-mini"
     }
 }

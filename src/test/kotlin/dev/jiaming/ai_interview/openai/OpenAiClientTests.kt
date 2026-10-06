@@ -38,6 +38,24 @@ class OpenAiClientTests {
         assertThat(body.path("response_format").path("type").asText()).isEqualTo("json_object")
         assertThat(body.path("messages").path(0).path("content").asText()).isEqualTo("Return JSON.")
         assertThat(body.path("max_completion_tokens").asInt()).isEqualTo(2048)
+        assertThat(body.path("temperature").asDouble()).isEqualTo(0.2)
+        assertThat(body.has("reasoning_effort")).isFalse()
+    }
+
+    @Test
+    fun aConfiguredReasoningModelGetsItsEffortAndNoTemperature() {
+        val captured = AtomicReference<HttpRequest>()
+        val client = OpenAiClient(
+            ObjectMapper(), { request -> captured.set(request); GeminiTransportResponse(200, choice("stop", "{}")) },
+            SimpleMeterRegistry(), ENDPOINT, "sk-test", 0.2, Duration.ofSeconds(5), 2048, "gpt-6-luna", "none"
+        )
+
+        client.generateJson("Return JSON.")
+
+        val body = ObjectMapper().readTree(body(captured.get()))
+        assertThat(body.path("model").asText()).isEqualTo("gpt-6-luna")
+        assertThat(body.path("reasoning_effort").asText()).isEqualTo("none")
+        assertThat(body.has("temperature")).isFalse()
     }
 
     @Test
