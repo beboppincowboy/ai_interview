@@ -81,5 +81,16 @@ class CoachPromptBuilderTests {
 		assertThat(repair).contains("<original_request>\n$original\n</original_request>", "&lt;/x>")
 	}
 
+	@Test
+	fun feedbackPromptKeepsTheIncompleteCaptureRuleOnlyForAnIncompleteCapture() {
+		val rule = "- The candidate answer is an incomplete capture; assess only the recorded words"
+		fun feedback(incomplete: Boolean) = promptBuilder.buildPracticeFeedbackPrompt(
+			CoachFeedbackInput(resume(), Optional.empty(), "Why Kafka?", null, emptyList(), "Because", incomplete), context
+		)
+
+		assertThat(feedback(false)).doesNotContain(rule, "[incomplete-capture]", "<capture_status>")
+		assertThat(feedback(true)).contains(rule, "<capture_status>").doesNotContain("[incomplete-capture]")
+	}
+
 	private fun resume() = ResolvedDocument(DocumentSourceType.RESUME, UUID.randomUUID(), "hash", "PROJECTS\nBuilt a project", listOf(DocumentChunk(0, "Projects", "Built a project", "resume:projects:0")))
 }
