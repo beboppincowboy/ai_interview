@@ -178,6 +178,40 @@ class PracticeIntegrationTests {
     }
 
     @Test
+    fun aRetriedAddWithTheSameIdempotencyKeyReturnsTheSavedQuestionWithoutRedis() {
+        // The guard here has Redis idempotency off, as during a Redis outage; PostgreSQL alone must stop the duplicate.
+        val set = readySet()
+        repeat(9) { practice.addQuestion(set.id, "My own question number $it?") }
+
+        val first = controller.addQuestion(set.id, AddPracticeQuestionRequest("How do you test retries?"), "retry-key-1")
+        val replay = controller.addQuestion(set.id, AddPracticeQuestionRequest("How do you test retries?"), "retry-key-1")
+
+        assertThat(replay.body).isEqualTo(first.body)
+        assertThat(practice.get(set.id).questions.count { it.origin == "USER" }).isEqualTo(10)
+        expectCode("CONFLICT") { practice.addQuestion(set.id, "A different question?", "retry-key-1") }
+        expectCode("QUESTION_LIMIT_REACHED") { practice.addQuestion(set.id, "A different question?", "retry-key-2") }
+    }
+
+    @Test
+    fun concurrentAddsWithOneIdempotencyKeySaveOneQuestion() {
+        val set = readySet()
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val ids = try {
+            val calls = (1..2).map {
+                executor.submit(Callable { start.await(); practice.addQuestion(set.id, "Same retried question?", "same-key").id })
+            }
+            start.countDown()
+            calls.map { it.get(10, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        assertThat(ids.distinct()).hasSize(1)
+        assertThat(practice.get(set.id).questions.count { it.origin == "USER" }).isEqualTo(1)
+    }
+
+    @Test
     fun theEleventhUserQuestionReachesTheLimit() {
         val set = readySet()
         repeat(10) { practice.addQuestion(set.id, "My own question number $it?") }

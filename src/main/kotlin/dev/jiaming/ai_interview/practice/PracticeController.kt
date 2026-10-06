@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -38,12 +39,14 @@ class PracticeController(
     )
 
     @PostMapping("/{setId}/questions")
-    fun addQuestion(@PathVariable setId: UUID, @RequestBody request: AddPracticeQuestionRequest): ResponseEntity<PracticeQuestionView> {
+    fun addQuestion(
+        @PathVariable setId: UUID,
+        @RequestBody request: AddPracticeQuestionRequest,
+        @RequestHeader("Idempotency-Key", required = false) idempotencyKey: String? = null,
+    ): ResponseEntity<PracticeQuestionView> {
         val text = RequestValidation.text("text", request.text, 10, 500)
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-            requestGuard.withIdempotentRetryCache("practice-question-add", listOf(setId, text), PracticeQuestionView::class.java) {
-                practiceService.addQuestion(setId, text)
-            }
-        )
+        // Replay protection lives in PostgreSQL with the insert, not in Redis, so a Redis outage cannot duplicate a question.
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(practiceService.addQuestion(setId, text, idempotencyKey?.trim()?.takeIf(String::isNotBlank)))
     }
 }

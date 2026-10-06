@@ -5,6 +5,7 @@ import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
+import dev.jiaming.ai_interview.common.sha256Hex
 import dev.jiaming.ai_interview.jobs.ActiveJob
 import dev.jiaming.ai_interview.jobs.AttemptFeedbackPayload
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
@@ -86,12 +87,18 @@ class PracticeService(
         }
     }
 
-    /** Appends a user question after the AI questions (§7.4). [text] is already trimmed and checked. */
-    fun addQuestion(setId: UUID, text: String): PracticeQuestionView {
+    /**
+     * Appends a user question after the AI questions (§7.4). [text] is already trimmed and checked. A repeated
+     * [idempotencyKey] replays the question it saved, because the key is recorded in the same transaction as the insert.
+     */
+    fun addQuestion(setId: UUID, text: String, idempotencyKey: String? = null): PracticeQuestionView {
         val userId = localUserService.localUserId()
+        val keyHash = idempotencyKey?.let(::sha256Hex)
         return inTransaction {
-            // KTD19: the set row lock serializes adds, so the count below is the committed count.
+            // KTD19: the set row lock serializes adds, so the count below is the committed count and a same-key retry
+            // waits for the first add to commit, then finds its question.
             val set = findSet(userId, "id = ? FOR UPDATE", setId) ?: notFound()
+            if (keyHash != null) savedForKey(userId, setId, keyHash, text)?.let { return@inTransaction it }
             val current = view(userId, set)
             if (current.status == PracticeSetStatus.GENERATING) {
                 throw ApiRequestException(HttpStatus.CONFLICT, "PRACTICE_SET_NOT_READY", "Practice questions are still being generated")
@@ -102,15 +109,27 @@ class PracticeService(
             }
             val questionId = jdbcTemplate.queryForObject(
                 """
-                    INSERT INTO ai_interview_app.practice_questions (practice_set_id, user_id, origin, order_index, text)
-                    VALUES (?, ?, 'USER', ?, ?)
+                    INSERT INTO ai_interview_app.practice_questions (practice_set_id, user_id, origin, order_index, text, idempotency_key_hash)
+                    VALUES (?, ?, 'USER', ?, ?, ?)
                     RETURNING id
                 """.trimIndent(),
-                UUID::class.java, setId, userId, userQuestions + 1, text,
+                UUID::class.java, setId, userId, userQuestions + 1, text, keyHash,
             )
             jdbcTemplate.update("UPDATE ai_interview_app.practice_sets SET updated_at = now() WHERE id = ? AND user_id = ?", setId, userId)
             questions(userId, setId).single { it.id == questionId }
         }
+    }
+
+    private fun savedForKey(userId: UUID, setId: UUID, keyHash: String, text: String): PracticeQuestionView? {
+        val (savedId, savedText) = jdbcTemplate.query(
+            "SELECT id, text FROM ai_interview_app.practice_questions WHERE practice_set_id = ? AND user_id = ? AND idempotency_key_hash = ?",
+            RowMapper { rs, _ -> rs.getObject("id", UUID::class.java) to rs.getString("text") },
+            setId, userId, keyHash,
+        ).singleOrNull() ?: return null
+        if (savedText != text) {
+            throw ApiRequestException(HttpStatus.CONFLICT, "CONFLICT", "Idempotency-Key was already used for a different question.")
+        }
+        return questions(userId, setId).single { it.id == savedId }
     }
 
     /** The set's questions: AI questions first, then user questions in the order they were added, each with its attempts. */
