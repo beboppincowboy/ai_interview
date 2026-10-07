@@ -1,10 +1,10 @@
 import { GoogleGenAI, type LiveCallbacks, type LiveServerMessage, type Session } from "@google/genai";
-import type { VoiceAnswer, VoiceQuestion, VoiceToken } from "@/lib/api/types";
+import type { VoiceQuestion, VoiceToken } from "@/lib/api/types";
 import { ApiError } from "@/lib/api/client";
 import { friendlyError } from "@/lib/errorMessages";
 import { mintVoiceToken } from "@/lib/query/voice";
 import { BrowserVoiceMedia } from "./audioCapture";
-import { VoiceTranscriptBuffer } from "./transcript";
+import { type LiveVoiceAnswer, VoiceTranscriptBuffer } from "./transcript";
 
 export const DISCONNECTED_MESSAGE = "Voice disconnected. Your transcript is still here.";
 
@@ -23,7 +23,7 @@ type Options = {
   media?: VoiceMedia;
   mint?: typeof mintVoiceToken;
   connect?: (token: VoiceToken, callbacks: VoiceCallbacks) => Promise<VoiceConnection>;
-  onAnswer: (answer: VoiceAnswer) => void;
+  onAnswer: (answer: LiveVoiceAnswer) => void;
   onState: (state: VoiceState, message?: string) => void;
 };
 
@@ -76,7 +76,7 @@ export class LiveVoiceAdapter {
     }
   }
 
-  async start(sessionId: string, question: VoiceQuestion, seed?: VoiceAnswer) {
+  async start(sessionId: string, question: VoiceQuestion, seed?: LiveVoiceAnswer) {
     if (this.closed || !this.prepared) throw new DOMException("Microphone is not ready", "AbortError");
     this.finishDrain?.();
     this.disconnect();

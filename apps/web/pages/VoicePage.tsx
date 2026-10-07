@@ -41,11 +41,17 @@ function VoiceInterview({ setId }: { setId: string }) {
           <p className="text-sm text-muted-foreground">Question {interview.index + 1} of {interview.questions.length}</p>
           <h2 id="voice-question" ref={heading} tabIndex={-1} className="text-xl font-medium outline-none">{question.text}</h2>
           <p className="text-sm">{interview.phase === "voice" ? (interview.muted ? "Microphone muted" : "Microphone on") : interview.phase === "connecting" ? "Preparing microphone or interview" : interview.phase === "ending" ? "Finishing capture" : "Microphone off"}</p>
-          {answer?.interviewerText ? <p className="whitespace-pre-wrap break-words text-sm"><span className="font-medium">Interviewer: </span>{answer.interviewerText}</p> : null}
-          {interview.phase === "typed" ? <div className="space-y-2">
-            <label htmlFor="typed-answer" className="text-sm font-medium">Your answer</label>
-            <Textarea id="typed-answer" value={answer?.answerText ?? ""} onChange={(event) => interview.editAnswer(question.id, event.target.value)} />
-          </div> : answer?.answerText ? <p className="whitespace-pre-wrap break-words"><span className="font-medium">You: </span>{answer.answerText}</p> : null}
+          {interview.phase !== "typed" && answer?.turns?.length ? <div className="space-y-2">
+            {answer.turns.map((turn, index) => <p key={index} className={`whitespace-pre-wrap break-words ${turn.speaker === "interviewer" ? "text-sm" : ""}`}>
+              <span className="font-medium">{turn.speaker === "interviewer" ? "Interviewer: " : "You: "}</span>{turn.text}
+            </p>)}
+          </div> : <>
+            {answer?.interviewerText ? <p className="whitespace-pre-wrap break-words text-sm"><span className="font-medium">Interviewer: </span>{answer.interviewerText}</p> : null}
+            {interview.phase === "typed" ? <div className="space-y-2">
+              <label htmlFor="typed-answer" className="text-sm font-medium">Your answer</label>
+              <Textarea id="typed-answer" value={answer?.answerText ?? ""} onChange={(event) => interview.editAnswer(question.id, event.target.value)} />
+            </div> : answer?.answerText ? <p className="whitespace-pre-wrap break-words"><span className="font-medium">You: </span>{answer.answerText}</p> : null}
+          </>}
           {answer?.incomplete ? <p className="text-sm text-amber-700 dark:text-amber-400">Capture may be incomplete. You can correct this in review.</p> : null}
         </section>
         <SessionControls phase={interview.phase} muted={interview.muted} onVoice={() => void interview.startVoice()} onType={() => void interview.typeInstead()} onMute={interview.toggleMute} onNext={() => void interview.advance()} onEnd={() => void interview.advance(true)} />
