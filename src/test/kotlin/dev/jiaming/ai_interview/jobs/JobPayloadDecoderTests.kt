@@ -3,6 +3,7 @@ package dev.jiaming.ai_interview.jobs
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.experience.ExperienceSplitJobPayload
+import dev.jiaming.ai_interview.voice.VoiceReportPayload
 import java.time.Instant
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
@@ -54,6 +55,18 @@ class JobPayloadDecoderTests {
 			assertThatThrownBy { decoder.decode(job(payload, JobType.ANSWER_FEEDBACK, resourceType), AttemptFeedbackPayload::class.java) }
 				.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("AttemptFeedbackPayload")
 		}
+	}
+
+	@Test
+	fun voiceReportJobsDecodeOnlyTheCurrentPayloadVersion() {
+		val payload = VoiceReportPayload(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
+		val stored = objectMapper.valueToTree<JsonNode>(payload)
+		assertThat(stored.fieldNames().asSequence().toList()).containsExactly("payloadVersion", "voiceSessionId", "resumeId", "targetJobId")
+
+		assertThat(decoder.decode(job(stored, JobType.VOICE_REPORT, VoiceReportPayload.RESOURCE), VoiceReportPayload::class.java)).isEqualTo(payload)
+		val unversioned = objectMapper.readTree("""{"voiceSessionId":"${payload.voiceSessionId}"}""")
+		assertThatThrownBy { decoder.decode(job(unversioned, JobType.VOICE_REPORT, VoiceReportPayload.RESOURCE), VoiceReportPayload::class.java) }
+			.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("VoiceReportPayload")
 	}
 
 	private fun job(payload: JsonNode, jobType: JobType, resourceType: String?): BackgroundJob {

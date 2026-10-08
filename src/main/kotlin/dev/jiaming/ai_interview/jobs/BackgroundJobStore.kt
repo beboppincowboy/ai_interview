@@ -18,16 +18,23 @@ import org.springframework.transaction.annotation.Transactional
 class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val objectMapper: ObjectMapper) {
     @Transactional
     fun createIfAbsent(userId: UUID, jobType: JobType, resourceType: String?, resourceId: UUID?,
-                       requestPayload: JsonNode?, requestFingerprint: String?, maxAttempts: Int): Optional<BackgroundJob> {
+                       requestPayload: JsonNode?, requestFingerprint: String?, maxAttempts: Int): Optional<BackgroundJob> =
+        createIfAbsentWithInitialResult(userId, jobType, resourceType, resourceId, requestPayload, requestFingerprint, maxAttempts, null)
+
+    /** Creates a fresh retry job with previously validated answer checkpoints already durable. */
+    @Transactional
+    fun createIfAbsentWithInitialResult(userId: UUID, jobType: JobType, resourceType: String?, resourceId: UUID?,
+                                        requestPayload: JsonNode?, requestFingerprint: String?, maxAttempts: Int,
+                                        initialResultPayload: JsonNode?): Optional<BackgroundJob> {
         val jobId = UUID.randomUUID()
         val insertedIds = jdbcTemplate.query("""
             INSERT INTO ai_interview_app.background_jobs (
                 id, user_id, job_type, resource_type, resource_id, status, stage,
-                request_payload, request_fingerprint, max_attempts, run_after
-            ) VALUES (?, ?, ?, ?, ?, 'QUEUED', 'QUEUED', ?::jsonb, ?, ?, now())
+                request_payload, result_payload, request_fingerprint, max_attempts, run_after
+            ) VALUES (?, ?, ?, ?, ?, 'QUEUED', 'QUEUED', ?::jsonb, ?::jsonb, ?, ?, now())
             ON CONFLICT DO NOTHING RETURNING id
             """, { rs, _ -> rs.getObject("id", UUID::class.java) }, jobId, userId, jobType.name,
-            resourceType, resourceId, json(requestPayload), requestFingerprint, maxAttempts)
+            resourceType, resourceId, json(requestPayload), initialResultPayload?.let(::json), requestFingerprint, maxAttempts)
         return Optional.ofNullable(insertedIds.firstOrNull()?.let { findById(it).orElse(null) })
     }
 
@@ -134,9 +141,10 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             'payloadVersion', request_payload -> 'payloadVersion',
             'resumeId', COALESCE(request_payload -> 'resumeId', CASE WHEN resource_type IN ($RESUME_RESOURCE_TYPES) THEN to_jsonb(resource_id) END),
             'jobDescriptionId', request_payload -> 'jobDescriptionId', 'targetJobId', request_payload -> 'targetJobId',
-            'practiceSetId', request_payload -> 'practiceSetId', 'attemptId', request_payload -> 'attemptId')), result_payload = NULL, updated_at = now()
+            'practiceSetId', request_payload -> 'practiceSetId', 'attemptId', request_payload -> 'attemptId',
+            'voiceSessionId', request_payload -> 'voiceSessionId')), result_payload = NULL, updated_at = now()
         WHERE status IN ('SUCCEEDED', 'FAILED') AND completed_at < now() - (? * interval '1 day')
-          AND (result_payload IS NOT NULL OR (request_payload - ARRAY['payloadVersion', 'resumeId', 'jobDescriptionId', 'targetJobId', 'practiceSetId', 'attemptId']) <> '{}'::jsonb)
+          AND (result_payload IS NOT NULL OR (request_payload - ARRAY['payloadVersion', 'resumeId', 'jobDescriptionId', 'targetJobId', 'practiceSetId', 'attemptId', 'voiceSessionId']) <> '{}'::jsonb)
         """, retentionDays)
 
     private fun markTerminal(jobId: UUID, leaseToken: UUID, status: JobStatus, resultPayload: JsonNode?, errorCode: String?, errorMessage: String?, retryable: Boolean): Boolean = jdbcTemplate.update("""

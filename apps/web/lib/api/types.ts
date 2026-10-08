@@ -10,7 +10,8 @@ export type JobType =
   | "EXPERIENCE_SUGGESTIONS"
   | "PRACTICE_QUESTIONS"
   | "EXPERIENCE_SPLIT"
-  | "ANSWER_FEEDBACK";
+  | "ANSWER_FEEDBACK"
+  | "VOICE_REPORT";
 
 export type JobStatus = "QUEUED" | "PROCESSING" | "RETRYING" | "SUCCEEDED" | "FAILED";
 
@@ -36,6 +37,7 @@ export type JobInputRefs = {
   targetJobId: string | null;
   practiceSetId: string | null;
   attemptId: string | null;
+  voiceSessionId: string | null;
 };
 
 export type ActiveJob = {
@@ -85,7 +87,11 @@ export type ErrorCode =
   | "NO_EXPERIENCE_SOURCES" | "PRACTICE_SET_NOT_READY" | "PRACTICE_SET_NOT_FAILED" | "QUESTION_LIMIT_REACHED"
   | "ANSWER_UNCHANGED" | "ATTEMPT_NOT_FAILED" | "UPLOAD_TOO_LARGE" | "UNSUPPORTED_FILE_TYPE"
   | "UNPROCESSABLE_CONTENT" | "RESUME_EXTRACTION_FAILED" | "RATE_LIMITED" | "SERVICE_UNAVAILABLE"
-  | "RESUME_PARSER_BUSY" | "INTERNAL_ERROR" | "REQUEST_FAILED";
+  | "RESUME_PARSER_BUSY" | "INTERNAL_ERROR" | "REQUEST_FAILED"
+  | "VOICE_DISABLED" | "VOICE_SESSION_NOT_FOUND" | "VOICE_SESSION_EXPIRED" | "VOICE_SESSION_NOT_DRAFT"
+  | "VOICE_QUESTION_NOT_FOUND" | "VOICE_RUN_EXPIRED" | "VOICE_TOKEN_BUDGET_EXHAUSTED"
+  | "VOICE_TOKEN_TIMEOUT" | "VOICE_TOKEN_RATE_LIMITED" | "VOICE_TOKEN_UNAVAILABLE"
+  | "VOICE_SESSION_ALREADY_SAVED" | "VOICE_REPORT_NOT_RETRYABLE" | "TRANSCRIPT_TOO_LARGE";
 
 export type Priority = "HIGH" | "MEDIUM" | "LOW";
 
@@ -97,6 +103,7 @@ export type DeleteImpact = {
   practiceSets: number;
   attempts: number;
   staleSuggestionSets: number;
+  voiceSessions: number;
 };
 
 export type Page<T> = { items: T[] };
@@ -197,6 +204,37 @@ export type Attempt = {
   createdAt: string;
 };
 
+export type VoiceQuestion = { id: string; text: string; category: string | null; expectedSignals: string[] };
+export type VoiceAnswer = { questionId: string; interviewerText: string; answerText: string; incomplete: boolean };
+export type VoiceTranscript = { answers: VoiceAnswer[] };
+export type VoiceAnswerReport = AnswerFeedbackResult & { questionId: string; incomplete: boolean };
+export type VoiceReport = {
+  selectedCount: number;
+  answeredCount: number;
+  overallScore: number;
+  answers: VoiceAnswerReport[];
+  weakestQuestionIds: string[];
+  unansweredQuestionIds: string[];
+};
+export type VoiceSession = {
+  id: string;
+  practiceSetId: string;
+  resumeId: string;
+  targetJobId: string;
+  status: "DRAFT" | "EXPIRED" | "SAVED";
+  questions: VoiceQuestion[];
+  transcript: VoiceTranscript | null;
+  submissionJobId: string | null;
+  reportJobId: string | null;
+  createdAt: string;
+  runDeadline: string;
+  draftExpiresAt: string;
+  savedAt: string | null;
+  report: VoiceReport | null;
+};
+export type VoiceSaveResult = { session: VoiceSession; replayed: boolean };
+export type VoiceToken = { token: string; model: string; apiVersion: "v1beta"; expiresAt: string; newSessionExpiresAt: string };
+
 // §8.2 Job results
 export type ResumeScoreResult = {
   overall: number;
@@ -239,6 +277,7 @@ export type AnswerFeedbackResult = {
 
 // §9 History
 export type History = {
+  voiceSessions: VoiceSessionHistory[];
   resumes: { id: string; name: string; scores: { overall: number; scoredAt: string }[] }[];
   targetJobs: {
     id: string;
@@ -254,4 +293,11 @@ export type History = {
     updatedAt: string;
     questions: { id: string; text: string; scores: number[] }[];
   }[];
+};
+
+export type VoiceSessionHistory = {
+  id: string; practiceSetId: string; resumeId: string; resumeName: string;
+  targetJobId: string; targetJobName: string; savedAt: string;
+  selectedCount: number; answeredCount: number; overallScore: number | null;
+  reportJobId: string; reportStatus: JobStatus;
 };

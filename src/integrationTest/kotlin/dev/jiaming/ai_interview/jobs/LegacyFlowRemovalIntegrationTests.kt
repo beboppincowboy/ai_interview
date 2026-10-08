@@ -108,7 +108,7 @@ class LegacyFlowRemovalIntegrationTests {
     private fun assertMigratedThroughV18(source: DriverManagerDataSource) {
         val flyway = flyway(source, null)
         flyway.validate()
-        assertThat(flyway.info().applied().map { it.version.version }).containsExactlyElementsOf((1..18).map(Int::toString))
+        assertThat(flyway.info().applied().map { it.version.version }).startsWith(*(1..18).map(Int::toString).toTypedArray())
         val jdbc = JdbcTemplate(source)
         assertThat(jdbc.queryForObject("SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'public.vector_store'::regclass AND attname = 'embedding'", String::class.java))
             .isEqualTo("vector(1024)")

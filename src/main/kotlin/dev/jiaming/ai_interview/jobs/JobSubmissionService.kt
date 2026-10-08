@@ -3,6 +3,7 @@ package dev.jiaming.ai_interview.jobs
 import java.util.Optional
 import java.util.UUID
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -32,11 +33,29 @@ class JobSubmissionService(
     }
     fun findReusable(type: JobType, fingerprint: String?): Optional<JobAcceptedResponse> = if (fingerprint == null) Optional.empty()
         else jobStore.findReusable(localUserService.localUserId(), type, fingerprint).map { JobAcceptedResponse.from(it, true) }
-    fun createOrReuse(type: JobType, resourceType: String?, resourceId: UUID?, requestPayload: Any, fingerprint: String?): JobAcceptedResponse {
+    fun createOrReuse(
+        type: JobType,
+        resourceType: String?,
+        resourceId: UUID?,
+        requestPayload: Any,
+        fingerprint: String?,
+    ): JobAcceptedResponse = createOrReuseWithInitialResult(type, resourceType, resourceId, requestPayload, fingerprint, null)
+
+    fun createOrReuseWithInitialResult(
+        type: JobType,
+        resourceType: String?,
+        resourceId: UUID?,
+        requestPayload: Any,
+        fingerprint: String?,
+        initialResultPayload: JsonNode?,
+    ): JobAcceptedResponse {
         val existing = findReusable(type, fingerprint)
         if (existing.isPresent) return existing.get()
-        val created = jobStore.createIfAbsent(localUserService.localUserId(), type, resourceType, resourceId,
-            objectMapper.valueToTree(requestPayload), fingerprint, properties.maxAttempts)
+        val userId = localUserService.localUserId()
+        val request = objectMapper.valueToTree<JsonNode>(requestPayload)
+        val created = jobStore.createIfAbsentWithInitialResult(
+            userId, type, resourceType, resourceId, request, fingerprint, properties.maxAttempts, initialResultPayload,
+        )
         if (created.isEmpty) return findReusable(type, fingerprint).orElseThrow { IllegalStateException("A matching active job won the submission race but could not be loaded") }
         val job = created.get()
         metrics.submitted(type)

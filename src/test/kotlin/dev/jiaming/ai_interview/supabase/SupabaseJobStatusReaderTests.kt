@@ -9,6 +9,7 @@ import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobStatus
 import dev.jiaming.ai_interview.jobs.JobStatusReaderConfiguration
 import dev.jiaming.ai_interview.jobs.JobType
+import dev.jiaming.ai_interview.voice.VoiceReportPayload
 import io.github.jan.supabase.SupabaseClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -112,6 +113,65 @@ class SupabaseJobStatusReaderTests {
         ))
         try {
             assertEquals(jdbcReader.findForUser(jobId, userId), reader.findForUser(jobId, userId))
+        } finally { client.close() }
+    }
+
+    @Test
+    fun `voice report nested JSON and session reference match through JDBC and SDK readers`() = runBlocking {
+        val resumeId = UUID.randomUUID()
+        val targetJobId = UUID.randomUUID()
+        val questionId = UUID.randomUUID()
+        val createdAt = Instant.parse("2026-10-04T12:00:00Z")
+        val requestPayload = """{"voiceSessionId":"$resourceId","resumeId":"$resumeId","targetJobId":"$targetJobId","payloadVersion":1}"""
+        val resultPayload = """{"selectedCount":2,"answeredCount":1,"overallScore":82,"answers":[{"questionId":"$questionId","score":82,"summary":"Clear example.","nextStep":null,"strengths":["specific"],"gaps":[],"betterAnswerOutline":[],"followUpQuestion":null,"incomplete":false}],"weakestQuestionIds":["$questionId"],"unansweredQuestionIds":[]}"""
+        val localJob = BackgroundJob(
+            id = jobId,
+            userId = userId,
+            jobType = JobType.VOICE_REPORT,
+            resourceType = VoiceReportPayload.RESOURCE,
+            resourceId = resourceId,
+            status = JobStatus.QUEUED,
+            stage = JobStage.SCORING_ANSWER,
+            requestPayload = mapper.readTree(requestPayload),
+            resultPayload = mapper.readTree(resultPayload),
+            requestFingerprint = "voice-fingerprint",
+            attempts = 2,
+            maxAttempts = 3,
+            errorCode = null,
+            lastError = null,
+            retryable = null,
+            runAfter = null,
+            createdAt = createdAt,
+            updatedAt = createdAt,
+            enqueuedAt = createdAt,
+            startedAt = null,
+            completedAt = null,
+            leaseToken = null,
+            leaseExpiresAt = null,
+        )
+        val jobStore = Mockito.mock(BackgroundJobStore::class.java)
+        Mockito.`when`(jobStore.findForUser(jobId, userId)).thenReturn(Optional.of(localJob))
+        val jdbcReader = JobStatusReaderConfiguration().localJobStatusReader(jobStore)
+        val (client, sdkReader) = reader(row(
+            requestPayload = requestPayload,
+            resultPayload = resultPayload,
+            createdAt = "\"$createdAt\"",
+            resourceType = "\"${VoiceReportPayload.RESOURCE}\"",
+            jobType = JobType.VOICE_REPORT.name,
+            stage = JobStage.SCORING_ANSWER.name,
+        ))
+        try {
+            val jdbcStatus = jdbcReader.findForUser(jobId, userId)!!
+            val sdkStatus = sdkReader.findForUser(jobId, userId)!!
+            assertEquals(jdbcStatus, sdkStatus)
+            assertEquals(JobType.VOICE_REPORT, sdkStatus.jobType)
+            assertEquals(resourceId, sdkStatus.inputRefs.voiceSessionId)
+            assertEquals(resumeId, sdkStatus.inputRefs.resumeId)
+            assertEquals(targetJobId, sdkStatus.inputRefs.targetJobId)
+            assertEquals(82, (sdkStatus.result as Map<*, *>) ["overallScore"])
+            val answer = ((sdkStatus.result as Map<*, *>) ["answers"] as List<*>).single() as Map<*, *>
+            assertEquals(questionId.toString(), answer["questionId"])
+            assertEquals(false, answer["incomplete"])
         } finally { client.close() }
     }
 

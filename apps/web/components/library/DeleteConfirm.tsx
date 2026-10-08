@@ -14,7 +14,8 @@ const LABELS: [keyof DeleteImpact, string, string][] = [
   ["fits", "job fit result", "job fit results"],
   ["suggestionSets", "suggestion set", "suggestion sets"],
   ["practiceSets", "practice set", "practice sets"],
-  ["attempts", "practice answer", "practice answers"]
+  ["attempts", "practice answer", "practice answers"],
+  ["voiceSessions", "saved voice interview", "saved voice interviews"]
 ];
 
 export function impactLines(impact: DeleteImpact) {

@@ -135,6 +135,14 @@ export function createHandlers(store: MockStore) {
     }),
     http.post(api("/attempts/:id/retry"), ({ params }) => respond(() => store.retryAttempt((params as Params).id), 202)),
 
+    http.post(api("/voice-sessions"), async ({ request }) => { const body = await json(request); return respond(() => store.createVoiceSession(body.practiceSetId), 201); }),
+    http.get(api("/voice-sessions/:id"), ({ params }) => respond(() => store.getVoiceSession((params as Params).id))),
+    http.post(api("/voice-sessions/:id/save"), async ({ params, request }) => { const body = await json(request); return respond(() => store.saveVoiceSession((params as Params).id, body)); }),
+    http.post(api("/voice-sessions/:id/report/retry"), ({ params }) => respond(() => store.retryVoiceReport((params as Params).id), 202)),
+    http.delete(api("/voice-sessions/:id/draft"), ({ params }) => respond(() => store.deleteVoiceSession((params as Params).id, true))),
+    http.delete(api("/voice-sessions/:id"), ({ params }) => respond(() => store.deleteVoiceSession((params as Params).id))),
+    http.post(api("/voice-sessions/:id/tokens"), () => HttpResponse.json({ code: "VOICE_TOKEN_UNAVAILABLE", message: "Voice requires a real configured API. Continue by typing." }, { status: 503, headers: { "Cache-Control": "no-store" } })),
+
     http.get(api("/history"), () => respond(() => store.history()))
   ];
 }

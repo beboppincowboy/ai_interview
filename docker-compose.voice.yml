@@ -1,0 +1,37 @@
+# Local-only override that runs the app with spoken interviews on, beside any other stack (KTD2):
+#   docker compose -p ai-interview-voice -f docker-compose.yml -f docker-compose.voice.yml --profile app up --build -d --wait
+# The project name keeps its volumes apart, every container is renamed, and every port is replaced, not added to.
+# Only the web UI is published, on loopback. The API stays unpublished, so it may listen on all container interfaces.
+services:
+  postgres:
+    container_name: ai-interview-voice-postgres
+    ports: !override
+      - "127.0.0.1:35432:5432"
+
+  redis:
+    container_name: ai-interview-voice-redis
+    ports: !override
+      - "127.0.0.1:36380:6379"
+
+  localstack:
+    container_name: ai-interview-voice-localstack
+    ports: !override
+      - "127.0.0.1:34566:4566"
+
+  api:
+    container_name: ai-interview-voice-api
+    environment:
+      VOICE_ENABLED: "true"
+      SERVER_ADDRESS: 0.0.0.0
+
+  worker:
+    container_name: ai-interview-voice-worker
+
+  web:
+    container_name: ai-interview-voice-web
+    build:
+      context: apps/web
+      args:
+        VITE_VOICE_ENABLED: "true"
+    ports: !override
+      - "127.0.0.1:33000:3000"

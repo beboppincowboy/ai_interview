@@ -9,7 +9,7 @@ function job(status: string, stage = "SCORING_RESUME") {
     jobId: "j1", jobType: "RESUME_SCORE", status, stage, attempts: 1, maxAttempts: 3,
     result: status === "SUCCEEDED" ? { overall: 70 } : null, error: null,
     createdAt: "2026-09-28T00:00:00Z", startedAt: null, completedAt: null,
-    inputRefs: { resumeId: "r1", targetJobId: null, practiceSetId: null, attemptId: null }
+    inputRefs: { resumeId: "r1", targetJobId: null, practiceSetId: null, attemptId: null, voiceSessionId: null }
   };
 }
 

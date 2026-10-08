@@ -160,7 +160,7 @@ With this stack running, check that the real API still answers the way the web a
 cd apps/web && LIVE_API_URL=http://127.0.0.1:3000 npm test -- liveApi
 ```
 
-This makes real AI calls. One run submits 11 of the 12 AI jobs the API allows per client per minute, so wait a minute between runs, and read a `429` as that limit rather than a mismatch. The suite never runs in CI, and `npm test` skips it unless `LIVE_API_URL` is set.
+This makes real AI calls. One run submits about 14 AI jobs, more than the 12 the API allows per client per minute, so a rate-limited request waits out the window once and retries; a full run takes a few minutes. A `429` that still fails the run means another client shared the budget. The suite never runs in CI, and `npm test` skips it unless `LIVE_API_URL` is set.
 
 For the isolated Supabase-backed full stack, use the separate Compose project and ports in [the migration runbook](docs/supabase-migration.md). It keeps the bundled PostgreSQL volume available for the local stack.
 

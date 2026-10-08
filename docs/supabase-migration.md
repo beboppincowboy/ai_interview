@@ -136,3 +136,15 @@ Apply it only to the integration environment, after stopping every API and worke
 ~~~
 
 V18 cannot be undone in place: the dropped tables and deleted jobs are gone, so rolling back to the old flow means restoring the preserved old environment. Status: applied to mjzycnjhtwyqcblwbjvy on 2026-10-01 with its consumers stopped (the legacy tables were empty and no legacy jobs existed), followed by `bootstrap-runtime`. The live smoke passed once the new runtime password propagated, and the full journey passed on the Supabase Compose stack at V18, including duplicate saves, a re-score kept in history, and further attempts with correct deltas.
+
+## Spoken interviews (V19, V20)
+
+V19 adds the private `voice_sessions` table, with the runtime-role grant guarded like V12–V15. V20 adds the per-run token mint count. Both are additive, so running consumers need not stop. Apply them with the same two commands, then turn voice on only through an untracked override (see `docs/runbooks/voice-development.md`).
+
+Status: applied to mjzycnjhtwyqcblwbjvy on 2026-10-05 with the owner's confirmation (v18 → v20, checksums validated), followed by `bootstrap-runtime`. The live smoke passed on its first run. On the Supabase Compose stack with voice on:
+
+- A typed voice run on a fresh practice set saved, and a repeated Save returned 200. The `VOICE_REPORT` job showed `PROCESSING/SCORING_ANSWER` then `SUCCEEDED/COMPLETED` through SDK polling. It finished too quickly for `QUEUED` to be observed.
+- The saved report reopened through the API and in the browser (25/100, 2 of 5 answered) with no console errors, and it appears in history. An unknown job still returned `404 JOB_NOT_FOUND`.
+- The application-endpoint Live proof passed 8/8 on `v1beta` with `gemini-3.8-live`. That covers synthetic speech, single-use and expired-start rejection, locked instruction and modality, and the draft discard, which shows the runtime role can delete voice drafts.
+
+Real-microphone acceptance in Chrome and Safari remains human-run.
