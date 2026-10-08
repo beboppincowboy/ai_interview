@@ -29,6 +29,11 @@ internal class ResumeStorageReconciler(
             }
         }
         cleanupService.retryPending(25)
+        try {
+            cleanupService.sweepOrphans()
+        } catch (exception: RuntimeException) {
+            log.warn("resume_storage_orphan_sweep_failed reason={}", exception.message)
+        }
     }
 
     private companion object { val log = LoggerFactory.getLogger(ResumeStorageReconciler::class.java) }

@@ -1,6 +1,9 @@
 package dev.jiaming.ai_interview.resume
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.jiaming.ai_interview.storage.StoredObjectPage
+import dev.jiaming.ai_interview.storage.StoredObjectSummary
+import java.time.Instant
 import dev.jiaming.ai_interview.common.ContentHasher
 import dev.jiaming.ai_interview.common.DeleteImpactService
 import dev.jiaming.ai_interview.common.LocalUserService
@@ -116,6 +119,42 @@ class ResumeStorageCleanupIntegrationTests {
         } finally {
             executor.shutdownNow()
         }
+    }
+
+    @Test
+    fun orphanSweepDeletesOnlyUnreferencedObjectsOlderThanTheGracePeriod() {
+        val now = Instant.parse("2026-10-05T12:00:00Z")
+        jdbc.update(
+            """INSERT INTO ai_interview_app.resumes (id, user_id, original_filename, storage_key, size_bytes, processing_status, name, source, file_hash) VALUES (?, ?, 'resume.pdf', 'resumes/kept/resume.pdf', 12, 'READY', 'Kept', 'UPLOAD', 'kept-hash')""",
+            UUID.randomUUID(), local.localUserId()
+        )
+        Mockito.`when`(storage.listObjects(null, 100)).thenReturn(StoredObjectPage(listOf(
+            StoredObjectSummary("resumes/kept/resume.pdf", now.minusSeconds(2 * 86_400)),
+            StoredObjectSummary("resumes/orphan/resume.pdf", now.minusSeconds(2 * 86_400)),
+            StoredObjectSummary("resumes/recent/resume.pdf", now.minusSeconds(3_600)),
+        ), false))
+
+        assertThat(ResumeStorageCleanupService(jdbc, storage).sweepOrphans(now)).isEqualTo(1)
+
+        Mockito.verify(storage).delete("resumes/orphan/resume.pdf")
+        Mockito.verify(storage, Mockito.times(1)).delete(any())
+    }
+
+    @Test
+    fun orphanSweepContinuesAfterATruncatedPageAndThenStartsOver() {
+        val now = Instant.parse("2026-10-05T12:00:00Z")
+        val old = now.minusSeconds(2 * 86_400)
+        Mockito.`when`(storage.listObjects(null, 100))
+            .thenReturn(StoredObjectPage(listOf(StoredObjectSummary("resumes/a/resume.pdf", old)), true))
+        Mockito.`when`(storage.listObjects("resumes/a/resume.pdf", 100))
+            .thenReturn(StoredObjectPage(listOf(StoredObjectSummary("resumes/b/resume.pdf", old)), false))
+
+        val sweeper = ResumeStorageCleanupService(jdbc, storage)
+        repeat(3) { sweeper.sweepOrphans(now) }
+
+        Mockito.verify(storage, Mockito.times(2)).listObjects(null, 100)
+        Mockito.verify(storage, Mockito.times(1)).listObjects("resumes/a/resume.pdf", 100)
+        Mockito.verify(storage).delete("resumes/b/resume.pdf")
     }
 
     @BeforeEach

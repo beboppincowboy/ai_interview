@@ -5,4 +5,6 @@ interface ObjectStorageService {
     fun get(key: String): StoredObjectContent
     fun delete(key: String?)
     fun tag(key: String?, tags: Map<String, String>?)
+    /** Up to [maxKeys] objects under [prefix] in key order, starting after [startAfter]. */
+    fun list(prefix: String, startAfter: String?, maxKeys: Int): StoredObjectPage
 }

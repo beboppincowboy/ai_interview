@@ -143,7 +143,7 @@ class SupabaseMigrationIntegrationTests {
                     buildList { while (result.next()) add(result.getString(1)) }
                 }
             }
-            assertThat(versions).containsExactly(*(1..20).map(Int::toString).toTypedArray())
+            assertThat(versions).containsExactly(*(1..21).map(Int::toString).toTypedArray())
             connection.createStatement().use { statement ->
                 statement.executeQuery("SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'public.vector_store'::regclass AND attname = 'embedding'").use { result ->
                     result.next(); assertThat(result.getString(1)).isEqualTo("vector(1024)")

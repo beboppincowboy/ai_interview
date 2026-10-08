@@ -105,6 +105,16 @@ class PracticeControllerTests {
     }
 
     @Test
+    fun addingAQuestionPassesTheIdempotencyKeyToTheService() {
+        val setId = UUID.randomUUID()
+        Mockito.`when`(service.addQuestion(setId, "Why did you choose Kafka?", "retry-key")).thenReturn(question("USER"))
+
+        mockMvc.perform(addQuestion(setId, "Why did you choose Kafka?").header("Idempotency-Key", " retry-key "))
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.origin").value("USER"))
+    }
+
+    @Test
     fun questionTextOutsideTenToFiveHundredCharactersIsRejectedBeforeTheService() {
         val setId = UUID.randomUUID()
         mockMvc.perform(addQuestion(setId, "x".repeat(9)))
