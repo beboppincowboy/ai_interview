@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import { beforeEach, expect, it, vi } from "vitest";
 import { JOB_TEXT, RESUME_TEXT, renderRoute, setupMockBackend } from "./render";
 
-type Callbacks = { onAnswer: (answer: { questionId: string; interviewerText: string; answerText: string; incomplete: boolean }) => void; onState: (state: string, message?: string) => void };
+type Callbacks = { onAnswer: (answer: { questionId: string; interviewerText: string; answerText: string; incomplete: boolean; turns?: { speaker: "interviewer" | "candidate"; text: string }[] }) => void; onState: (state: string, message?: string) => void };
 const audio = vi.hoisted(() => {
   // setup.ts eagerly imports pages; clear that cache before installing this file's audio/config mocks.
   vi.resetModules();
@@ -126,6 +126,28 @@ it("accepts exactly 4,000 answer characters and keeps oversized text editable wi
   expect(screen.getByLabelText("Answer 1")).toHaveValue("a".repeat(4001));
   expect(screen.getByRole("button", { name: "Save interview" })).toBeDisabled();
   expect(screen.getByText(/Each answer must be 4,000/)).toBeInTheDocument();
+});
+
+it("shows the spoken conversation turn by turn and saves only the transcript fields", async () => {
+  const set = await readySet(); audio.prepare.mockResolvedValue(undefined);
+  let saved: unknown;
+  server.use(http.post("*/api/voice-sessions/:id/save", async ({ request }) => { saved = await request.json(); return HttpResponse.json({ message: "stop here" }, { status: 400 }); }));
+  renderRoute(`/voice/${set.id}`);
+  await userEvent.click(await screen.findByRole("button", { name: "Start interview" }));
+  act(() => audio.callbacks[0].onAnswer({
+    questionId: set.questions[0].id, interviewerText: "Why Kafka?\nAnd retries?", answerText: "For ordering.\nWith backoff.", incomplete: false,
+    turns: [
+      { speaker: "interviewer", text: "Why Kafka?" }, { speaker: "candidate", text: "For ordering." },
+      { speaker: "interviewer", text: "And retries?" }, { speaker: "candidate", text: "With backoff." }
+    ]
+  }));
+  const lines = screen.getAllByText(/^(Interviewer|You):/).map((label) => label.parentElement?.textContent);
+  expect(lines).toEqual(["Interviewer: Why Kafka?", "You: For ordering.", "Interviewer: And retries?", "You: With backoff."]);
+
+  await userEvent.click(screen.getByRole("button", { name: "End interview" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Save interview" }));
+  await waitFor(() => expect(saved).toBeDefined());
+  expect(saved).toEqual({ answers: [{ questionId: set.questions[0].id, interviewerText: "Why Kafka?\nAnd retries?", answerText: "For ordering.\nWith backoff.", incomplete: false }] });
 });
 
 it("keeps mute across Next and voice recovery, attributes late events, and focuses transitions", async () => {

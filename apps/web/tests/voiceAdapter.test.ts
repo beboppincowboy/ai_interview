@@ -77,6 +77,27 @@ it("waits for setup, including setup before connect resolves, and emits canonica
   f.adapter.close();
 });
 
+it("records the conversation as alternating interviewer and candidate turns", async () => {
+  const f = fixture();
+  await f.adapter.prepare(); await f.adapter.start("s1", q);
+  const say = (content: object) => f.callbacks[0].onmessage({ serverContent: content });
+  say({ outputTranscription: { text: "Why Kafka" } }); say({ outputTranscription: { text: "?" } });
+  say({ inputTranscription: { text: "For ordering." } });
+  say({ outputTranscription: { text: "How did you handle retries?" } });
+  say({ inputTranscription: { text: "With backoff.", finished: true } });
+  expect(f.answers.at(-1)).toMatchObject({
+    interviewerText: "Why Kafka?\nHow did you handle retries?",
+    answerText: "For ordering.\nWith backoff.",
+    turns: [
+      { speaker: "interviewer", text: "Why Kafka?" },
+      { speaker: "candidate", text: "For ordering." },
+      { speaker: "interviewer", text: "How did you handle retries?" },
+      { speaker: "candidate", text: "With backoff." }
+    ]
+  });
+  f.adapter.close();
+});
+
 it("attributes independent transcripts to their question and ignores obsolete epochs", async () => {
   vi.useFakeTimers();
   const f = fixture();

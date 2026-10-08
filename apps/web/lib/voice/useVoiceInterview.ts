@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBlocker, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import type { VoiceAnswer, VoiceQuestion, VoiceSession, VoiceTranscript } from "@/lib/api/types";
+import type { LiveVoiceAnswer } from "./transcript";
 import { isNotFound } from "@/lib/api/isNotFound";
 import { friendlyError } from "@/lib/errorMessages";
 import { createVoiceSession, discardVoiceDraft, getVoiceSession, saveVoiceSession, voiceKeys } from "@/lib/query/voice";
@@ -19,7 +20,10 @@ const TYPING_MESSAGE = "Typing. Your microphone is off.";
 const RUN_ENDED_MESSAGE = "The 20-minute interview has ended. Review and save your answers.";
 const hasText = (answers: VoiceAnswer[]) => answers.some((answer) => answer.answerText.trim() || answer.interviewerText.trim());
 
-export const transcriptBytes = (transcript: VoiceTranscript) => new TextEncoder().encode(JSON.stringify(transcript)).byteLength;
+/** The fields Save sends; display-only turns stay in the browser. */
+const savedAnswer = ({ questionId, interviewerText, answerText, incomplete }: VoiceAnswer): VoiceAnswer => ({ questionId, interviewerText, answerText, incomplete });
+export const transcriptBytes = (transcript: VoiceTranscript) =>
+  new TextEncoder().encode(JSON.stringify({ answers: transcript.answers.map(savedAnswer) })).byteLength;
 export function transcriptProblem(transcript: VoiceTranscript) {
   if (transcript.answers.some((answer) => answer.answerText.length > MAX_ANSWER_CHARS)) return "Each answer must be 4,000 characters or fewer. Shorten the answer before saving.";
   if (transcriptBytes(transcript) > MAX_TRANSCRIPT_BYTES) return "The transcript exceeds 64 KiB. Shorten the transcript before saving.";
@@ -34,14 +38,14 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   const [session, setSession] = useState<VoiceSession | null>(null);
   const [phase, setPhase] = useState<InterviewPhase>("ready");
   const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<VoiceAnswer[]>([]);
+  const [answers, setAnswers] = useState<LiveVoiceAnswer[]>([]);
   const [muted, setMuted] = useState(false);
   const [message, setMessage] = useState("Ready when you are. Your microphone starts only when you choose voice.");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [discarding, setDiscarding] = useState(false);
   const sessionRef = useRef<VoiceSession | null>(null);
   const creating = useRef<Promise<VoiceSession> | null>(null);
-  const answersRef = useRef<VoiceAnswer[]>([]);
+  const answersRef = useRef<LiveVoiceAnswer[]>([]);
   const media = useRef<LiveVoiceAdapter | null>(null);
   const recoveryMessage = useRef<string | null>(null);
   const deadlineDrain = useRef(false);
@@ -65,7 +69,7 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     return () => { mounted.current = false; operation.current++; media.current?.close(); media.current = null; };
   }, []);
 
-  function updateAnswer(answer: VoiceAnswer) {
+  function updateAnswer(answer: LiveVoiceAnswer) {
     const found = answersRef.current.some((item) => item.questionId === answer.questionId);
     answersRef.current = found ? answersRef.current.map((item) => item.questionId === answer.questionId ? answer : item) : [...answersRef.current, answer];
     if (mounted.current) setAnswers(answersRef.current);
@@ -73,7 +77,8 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
   function editAnswer(questionId: string, answerText: string, interviewerText?: string) {
     if (saveLock.current || discarding) return;
     const old = answersRef.current.find((answer) => answer.questionId === questionId) ?? emptyAnswer(questionId);
-    updateAnswer({ ...old, answerText, interviewerText: interviewerText ?? old.interviewerText });
+    // Typed or corrected text no longer matches the spoken turns, so the page falls back to the plain transcript.
+    updateAnswer({ ...savedAnswer(old), answerText, interviewerText: interviewerText ?? old.interviewerText });
   }
   async function ensureSession() {
     if (sessionRef.current) return sessionRef.current;
@@ -208,7 +213,7 @@ export function useVoiceInterview(setId: string, preparedQuestions: VoiceQuestio
     if (saveLock.current || discarding || transcriptProblem({ answers: answersRef.current })) return;
     saveLock.current = true; setSaveState("saving"); setMessage("Saving interview…");
     // The lock holds this exact payload unchanged until GET establishes the outcome.
-    const payload = { answers: answersRef.current.map((answer) => ({ ...answer })) };
+    const payload = { answers: answersRef.current.map(savedAnswer) };
     // A denied microphone can reach review before any draft exists; create it now so Save is never a silent no-op.
     let draft: VoiceSession;
     try { draft = await ensureSession(); }
