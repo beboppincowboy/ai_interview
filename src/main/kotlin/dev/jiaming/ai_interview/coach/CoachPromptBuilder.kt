@@ -147,7 +147,9 @@ class CoachPromptBuilder {
         rules = listOf(
             "Do not reward claims the answer does not make.",
             "Do not invent resume details beyond the context."
-        ),
+        ) + if (input.incompleteCapture()) listOf(
+            "The candidate answer is an incomplete capture; assess only the recorded words and do not infer what may have been cut off."
+        ) else emptyList(),
         outputShape = """
             {
               "score": 0,
@@ -165,7 +167,7 @@ class CoachPromptBuilder {
             "expected_signals" to input.expectedSignals().joinToString(", ").ifEmpty { "none listed" },
             "context" to context.context,
             "answer" to truncate(input.answerText(), ANSWER_PROMPT_LIMIT)
-        )
+        ) + if (input.incompleteCapture()) listOf("capture_status" to "INCOMPLETE: the answer capture may have ended early") else emptyList()
     )
 
     fun buildRepairPrompt(originalPrompt: String, invalidOutput: String, parseError: String?): String = prompt(

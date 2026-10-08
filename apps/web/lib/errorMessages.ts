@@ -4,6 +4,19 @@ import type { JobError } from "@/lib/api/types";
 const NETWORK_MESSAGE = "The server is not reachable. Check your connection and try again.";
 
 const ERROR_MESSAGES: Record<string, string> = {
+  VOICE_DISABLED: "Spoken interviews are disabled. You can still open saved interviews.",
+  VOICE_SESSION_NOT_FOUND: "This interview was deleted.",
+  VOICE_SESSION_EXPIRED: "This unsaved interview expired.",
+  VOICE_SESSION_NOT_DRAFT: "This interview is already saved. Open its report to continue.",
+  VOICE_QUESTION_NOT_FOUND: "This question is not part of the interview.",
+  VOICE_RUN_EXPIRED: "Recording time has ended. Review and save your answers.",
+  VOICE_TOKEN_BUDGET_EXHAUSTED: "The connection limit was reached. Continue by typing or end the interview.",
+  VOICE_TOKEN_TIMEOUT: "The interviewer connection timed out. Retry, type your answer, or end the interview.",
+  VOICE_TOKEN_RATE_LIMITED: "The interviewer is at its usage limit. Continue by typing or try again later.",
+  VOICE_TOKEN_UNAVAILABLE: "The interviewer could not be reached. Retry, type your answer, or end the interview.",
+  VOICE_SESSION_ALREADY_SAVED: "This interview was already saved with different answers. Open its saved transcript.",
+  VOICE_REPORT_NOT_RETRYABLE: "This report is not ready to retry. Check its current status.",
+  TRANSCRIPT_TOO_LARGE: "The transcript is too large. Shorten your answers before saving.",
   GEMINI_NOT_CONFIGURED: "The AI service is not configured.",
   GEMINI_RATE_LIMITED: "The AI service is at its usage limit. Try again later.",
   GEMINI_TIMEOUT: "The AI request timed out.",

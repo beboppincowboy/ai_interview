@@ -67,7 +67,7 @@ class JobSubmissionServiceTests {
         Mockito.`when`(jobStore.findReusable(userId, JobType.RESUME_SCORE, "new"))
             .thenReturn(Optional.empty())
         Mockito.`when`(
-            jobStore.createIfAbsent(eq(userId), eq(JobType.RESUME_SCORE), eq("resume"), eq(null), any(), eq("new"), eq(3))
+            jobStore.createIfAbsentWithInitialResult(eq(userId), eq(JobType.RESUME_SCORE), eq("resume"), eq(null), any(), eq("new"), eq(3), eq(null))
         ).thenReturn(Optional.of(created))
 
         val response = service.createOrReuse(
@@ -86,8 +86,8 @@ class JobSubmissionServiceTests {
         Mockito.`when`(jobStore.findReusable(userId, JobType.RESUME_SCORE, "race"))
             .thenReturn(Optional.empty(), Optional.of(winner))
         Mockito.`when`(
-            jobStore.createIfAbsent(
-                eq(userId), eq(JobType.RESUME_SCORE), eq("resume"), eq(null), any(), eq("race"), eq(3)
+            jobStore.createIfAbsentWithInitialResult(
+                eq(userId), eq(JobType.RESUME_SCORE), eq("resume"), eq(null), any(), eq("race"), eq(3), eq(null)
             )
         ).thenReturn(Optional.empty())
 
@@ -111,7 +111,7 @@ class JobSubmissionServiceTests {
         val limitedService = JobSubmissionService(jobStore, dispatcher, RequestFingerprintService(ObjectMapper()), localUserService,
             guard, properties, RuntimeModeProperties("all"), metrics, ObjectMapper())
         Mockito.`when`(localUserService.localUserId()).thenReturn(userId)
-        Mockito.`when`(jobStore.createIfAbsent(eq(userId), any(), anyOrNull(), anyOrNull(), any(), anyOrNull(), eq(3)))
+        Mockito.`when`(jobStore.createIfAbsentWithInitialResult(eq(userId), any(), anyOrNull(), anyOrNull(), any(), anyOrNull(), eq(3), eq(null)))
             .thenAnswer { Optional.of(job(JobStatus.QUEUED)) }
 
         repeat(12) { limitedService.submit(JobType.RESUME_SCORE, "resume", UUID.randomUUID(), mapOf("n" to it)) }
@@ -126,7 +126,7 @@ class JobSubmissionServiceTests {
     fun submitFingerprintsOnJobTypeAndResourceAndLeavesResourcelessJobsUnfingerprinted() {
         val resourceId = UUID.randomUUID()
         Mockito.`when`(localUserService.localUserId()).thenReturn(userId)
-        Mockito.`when`(jobStore.createIfAbsent(eq(userId), any(), anyOrNull(), anyOrNull(), any(), anyOrNull(), eq(3)))
+        Mockito.`when`(jobStore.createIfAbsentWithInitialResult(eq(userId), any(), anyOrNull(), anyOrNull(), any(), anyOrNull(), eq(3), eq(null)))
             .thenAnswer { Optional.of(job(JobStatus.QUEUED)) }
 
         service.submit(JobType.RESUME_SCORE, "resume", resourceId, mapOf("text" to "first"))
@@ -134,8 +134,8 @@ class JobSubmissionServiceTests {
         service.submit(JobType.ANSWER_FEEDBACK, null, null, mapOf("text" to "split"))
 
         val fingerprints = ArgumentCaptor.forClass(String::class.java)
-        Mockito.verify(jobStore, Mockito.times(3)).createIfAbsent(
-            eq(userId), any(), anyOrNull(), anyOrNull(), any(), fingerprints.capture(), eq(3)
+        Mockito.verify(jobStore, Mockito.times(3)).createIfAbsentWithInitialResult(
+            eq(userId), any(), anyOrNull(), anyOrNull(), any(), fingerprints.capture(), eq(3), eq(null)
         )
         assertThat(fingerprints.allValues[0]).isNotNull().isEqualTo(fingerprints.allValues[1])
         assertThat(fingerprints.allValues[2]).isNull()

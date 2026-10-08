@@ -9,6 +9,18 @@ const at = "2026-09-28T12:00:00Z";
 const serve = (history: History) => server.use(http.get("*/api/history", () => HttpResponse.json(history)));
 
 describe("history", () => {
+  it("links saved voice reports with coverage and preserves a zero score", async () => {
+    serve({ resumes: [], targetJobs: [], practiceSets: [], voiceSessions: [{
+      id: "v1", practiceSetId: "p1", resumeId: "r1", resumeName: "Backend", targetJobId: "j1", targetJobName: "Acme",
+      savedAt: at, selectedCount: 6, answeredCount: 2, overallScore: 0, reportJobId: "job1", reportStatus: "SUCCEEDED"
+    }] });
+    renderRoute("/history");
+    const row = await screen.findByRole("link", { name: /acme.*backend/i });
+    expect(row).toHaveAttribute("href", "/voice/sessions/v1");
+    expect(row).toHaveTextContent("2 of 6 answered");
+    expect(row).toHaveTextContent("Score 0");
+  });
+
   it("shows a first-run state linking to the flow when empty", async () => {
     renderRoute("/history");
     expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
@@ -16,7 +28,7 @@ describe("history", () => {
   });
 
   it("shows a single score without a sparkline", async () => {
-    serve({ resumes: [{ id: "r1", name: "Backend", scores: [{ overall: 64, scoredAt: at }] }], targetJobs: [], practiceSets: [] });
+    serve({ resumes: [{ id: "r1", name: "Backend", scores: [{ overall: 64, scoredAt: at }] }], targetJobs: [], practiceSets: [], voiceSessions: [] });
     renderRoute("/history");
     const row = await screen.findByRole("link", { name: /backend/i });
     expect(row).toHaveTextContent("64");
@@ -27,6 +39,7 @@ describe("history", () => {
     serve({
       resumes: [],
       targetJobs: [],
+      voiceSessions: [],
       practiceSets: [{
         id: "p1", resumeId: "r1", resumeName: "Backend", targetJobId: "j1", targetJobName: "Acme", updatedAt: at,
         questions: [{ id: "q1", text: "Tell me about a latency fix.", scores: [62, 70, 74] }]

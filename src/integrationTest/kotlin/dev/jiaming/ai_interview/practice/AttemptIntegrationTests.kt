@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.data.redis.core.ValueOperations
 import org.springframework.data.redis.core.script.RedisScript
@@ -255,7 +256,7 @@ class AttemptIntegrationTests {
         val question = set.questions.first()
         useIdempotencyKey("flaky")
         Mockito.doThrow(IllegalStateException("job store unavailable")).doCallRealMethod()
-            .`when`(jobs).createIfAbsent(any(), any(), any(), any(), any(), any(), Mockito.anyInt())
+            .`when`(jobs).createIfAbsentWithInitialResult(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
 
         assertThatThrownBy { submit(set.id, question.id, "My answer") }.hasMessageContaining("job store unavailable")
         assertThat(count("answer_attempts")).isZero()

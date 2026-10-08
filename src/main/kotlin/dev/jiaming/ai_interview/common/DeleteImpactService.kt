@@ -11,7 +11,8 @@ data class DeleteImpact(
     val suggestionSets: Int,
     val practiceSets: Int,
     val attempts: Int,
-    val staleSuggestionSets: Int
+    val staleSuggestionSets: Int,
+    val voiceSessions: Int = 0,
 )
 
 @Service
@@ -44,8 +45,17 @@ class DeleteImpactService(private val jdbcTemplate: JdbcTemplate) {
             "SELECT count(*) FROM ai_interview_app.experience_suggestions WHERE user_id = ? AND resume_id <> ? AND source_ids @> jsonb_build_array(?::text)",
             Int::class.java, userId, resumeId, resumeId.toString()
         ) ?: 0
-        return DeleteImpact(scores, fits, suggestionSets, practiceSets, countPracticeAttempts(jdbcTemplate, userId, "resume_id", resumeId), staleSuggestionSets)
+        return DeleteImpact(scores, fits, suggestionSets, practiceSets, countPracticeAttempts(jdbcTemplate, userId, "resume_id", resumeId), staleSuggestionSets,
+            countSavedVoiceSessions(jdbcTemplate, userId, "resume_id", resumeId))
     }
+}
+
+internal fun countSavedVoiceSessions(jdbcTemplate: JdbcTemplate, userId: java.util.UUID, pairColumn: String, id: java.util.UUID): Int {
+    require(pairColumn == "resume_id" || pairColumn == "target_job_id") { "Unsupported pair column $pairColumn" }
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM ai_interview_app.voice_sessions WHERE $pairColumn = ? AND user_id = ? AND saved_at IS NOT NULL",
+        Int::class.java, id, userId,
+    ) ?: 0
 }
 
 /** Attempts in the owner's practice sets whose [pairColumn] (`resume_id` or `target_job_id`) is [id]; deleting that side cascades to exactly these. */

@@ -4,9 +4,10 @@
 // file, so a field that one side renames or drops fails the run against that side.
 import { afterAll, expect, it } from "vitest";
 import { ApiError, apiRequest } from "@/lib/api/client";
+import committedShapes from "./apiShapes.json";
 import type {
   Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, Resume, ResumeCreated, SuggestionsView,
-  TargetJobCreated
+  TargetJobCreated, VoiceSession, VoiceSaveResult, VoiceTranscript
 } from "@/lib/api/types";
 
 export type ApiTarget = {
@@ -16,7 +17,21 @@ export type ApiTarget = {
   settle: (jobIds: string[]) => Promise<void>;
 };
 
-export const post = <T,>(path: string, body: unknown = {}) => apiRequest<T>(path, { method: "POST", body, retries: 0 });
+const AI_BUDGET_WINDOW_MS = 61_000;
+/**
+ * A real API allows 12 AI jobs a minute and a full run starts more, so a rate-limited POST waits out the window once.
+ * The limit is checked before anything is written, so the retry cannot duplicate work.
+ */
+export const post = async <T,>(path: string, body: unknown = {}): Promise<T> => {
+  const send = () => apiRequest<T>(path, { method: "POST", body, retries: 0 });
+  try {
+    return await send();
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 429)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, AI_BUDGET_WINDOW_MS));
+    return send();
+  }
+};
 export const get = <T,>(path: string) => apiRequest<T>(path, { retries: 0 });
 export const errorOf = (promise: Promise<unknown>) => promise.then(() => null, (error: unknown) => error);
 
@@ -131,7 +146,8 @@ const ownHistory = (history: History, keep: string[]) => ({
   ...history,
   resumes: history.resumes.filter((item) => keep.includes(item.id)),
   targetJobs: history.targetJobs.filter((item) => keep.includes(item.id)),
-  practiceSets: history.practiceSets.filter((item) => keep.includes(item.id))
+  practiceSets: history.practiceSets.filter((item) => keep.includes(item.id)),
+  voiceSessions: history.voiceSessions.filter((item) => keep.includes(item.id))
 });
 
 const ids = (items: { id: string }[]) => items.map((item) => item.id);
@@ -145,11 +161,15 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
   // with part of the contract under `-u`.
   let registered = 0;
   let passed = 0;
-  const scenario = (name: string, run: () => Promise<void>) => {
+  // The default Compose stack runs with voice off, where the voice contract is VOICE_DISABLED rather than its shapes.
+  let voiceOff = false;
+  const scenario = (name: string, run: (skip: (note: string) => void) => Promise<void>) => {
     registered += 1;
-    it(name, async () => {
-      await run();
+    it(name, async (context) => {
+      let skipped: string | null = null;
+      await run((note) => { skipped = note; });
       passed += 1;
+      if (skipped) context.skip(skipped);
     });
   };
 
@@ -225,7 +245,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     await readJob(attempt.activeJob!.jobId);
 
     const preview = record("GET /api/resumes/{id}/delete-impact", await get<DeleteImpact>(`${base}/api/resumes/${resume.id}/delete-impact`));
-    expect(preview).toEqual({ scores: 1, fits: 1, suggestionSets: 1, practiceSets: 1, attempts: 1, staleSuggestionSets: 1 });
+    expect(preview).toEqual({ scores: 1, fits: 1, suggestionSets: 1, practiceSets: 1, attempts: 1, staleSuggestionSets: 1, voiceSessions: 0 });
     record("GET /api/history", ownHistory(await get<History>(`${base}/api/history`), [resume.id, job.id, set.id]));
 
     await apiRequest(`${base}/api/resumes/${resume.id}`, { method: "DELETE" });
@@ -294,12 +314,58 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(updated.latestScore?.stale).toBe(true);
   });
 
+  scenario("saves, replays, reopens and deletes voice reports without adding text attempts", async (skip) => {
+    const probe = await errorOf(post(`${base}/api/voice-sessions`, {}));
+    if (base && probe instanceof ApiError && probe.code === "VOICE_DISABLED") {
+      voiceOff = true;
+      return skip("voice is off on this API; run against the docker-compose.voice.yml stack to check it");
+    }
+    const resume = await paste("Voice backend");
+    const job = await targetJob();
+    const set = await createSet(resume.id, job.id);
+    await settle([set.activeJob!.jobId]);
+    const create = () => post<VoiceSession>(`${base}/api/voice-sessions`, { practiceSetId: set.id });
+    const draft = record("POST /api/voice-sessions", await create());
+    expect(draft.status).toBe("DRAFT");
+    expect(draft.questions.length).toBeGreaterThan(0);
+    expect(ids((await get<History>(`${base}/api/history`)).voiceSessions)).not.toContain(draft.id);
+    const transcript: VoiceTranscript = { answers: draft.questions.map((q, index) => ({ questionId: q.id, interviewerText: q.text, answerText: index === 0 ? "I improved a Kotlin payment service by measuring slow PostgreSQL queries, adding an index, and validating the improvement under load." : "", incomplete: index === 0 })) };
+    const saved = record("POST /api/voice-sessions/{id}/save", await post<VoiceSaveResult>(`${base}/api/voice-sessions/${draft.id}/save`, transcript));
+    expect(saved.replayed).toBe(false);
+    await settle([saved.session.reportJobId!]);
+    await readJob(saved.session.reportJobId!);
+    const detail = record("GET /api/voice-sessions/{id} (completed)", await get<VoiceSession>(`${base}/api/voice-sessions/${draft.id}`));
+    expect(detail.report).toMatchObject({ selectedCount: draft.questions.length, answeredCount: 1 });
+    expect(detail.report!.answers[0]).toMatchObject({ questionId: draft.questions[0].id, incomplete: true });
+    expect(detail.report!.unansweredQuestionIds).toHaveLength(draft.questions.length - 1);
+    const replay = record("POST /api/voice-sessions/{id}/save (replay)", await post<VoiceSaveResult>(`${base}/api/voice-sessions/${draft.id}/save`, transcript));
+    expect(replay).toMatchObject({ replayed: true, session: { submissionJobId: saved.session.submissionJobId, reportJobId: saved.session.reportJobId } });
+    expect((await readSet(set.id)).questions.every((q) => q.attempts.length === 0)).toBe(true);
+    record("GET /api/history (voice)", ownHistory(await get<History>(`${base}/api/history`), [resume.id, job.id, set.id, draft.id]));
+    const impact = await get<DeleteImpact>(`${base}/api/resumes/${resume.id}/delete-impact`);
+    expect(impact.voiceSessions).toBe(1);
+    await apiRequest(`${base}/api/voice-sessions/${draft.id}`, { method: "DELETE", retries: 0 });
+    expect(await errorOf(get(`${base}/api/voice-sessions/${draft.id}`))).toMatchObject({ code: "VOICE_SESSION_NOT_FOUND" });
+    expect(await errorOf(get(`${base}/api/jobs/${saved.session.reportJobId}`))).toMatchObject({ code: "JOB_NOT_FOUND" });
+    const second = await create();
+    const secondSaved = await post<VoiceSaveResult>(`${base}/api/voice-sessions/${second.id}/save`, { answers: second.questions.map((q, i) => ({ questionId: q.id, interviewerText: q.text, answerText: i === 0 ? "A second answer" : "", incomplete: false })) });
+    await apiRequest(`${base}/api/target-jobs/${job.id}`, { method: "DELETE", retries: 0 });
+    expect(await errorOf(get(`${base}/api/voice-sessions/${second.id}`))).toMatchObject({ code: "VOICE_SESSION_NOT_FOUND" });
+    expect(await errorOf(get(`${base}/api/jobs/${secondSaved.session.reportJobId}`))).toMatchObject({ code: "JOB_NOT_FOUND" });
+    expect(ids((await get<History>(`${base}/api/history`)).resumes)).toContain(resume.id);
+  });
+
   // Runs last, after every scenario above has recorded its shapes. The mock API run writes the file when it is missing;
   // `npm test -u` rewrites it after an intended contract change.
   it("answers with the response shapes in apiShapes.json", async () => {
     if (passed < registered) throw new Error(`Shapes are compared after every scenario passes; ${passed} of ${registered} did`);
     // An empty declared array records its declared fields, not the API's, so a real API must fill each one at least once.
     if (base) expect([...populated].sort()).toEqual(Object.keys(OPTIONAL_ARRAY_FIELDS).sort());
+    if (voiceOff) {
+      // Compared without the voice labels and never written back, so a voice-off run cannot drop them from the file.
+      expect(shapes).toEqual(Object.fromEntries(Object.entries(committedShapes).filter(([label]) => !/voice/i.test(label))));
+      return;
+    }
     await expect(`${JSON.stringify(shapes, null, 2)}\n`).toMatchFileSnapshot("./apiShapes.json");
   });
 }

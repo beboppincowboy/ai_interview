@@ -140,7 +140,7 @@ describe("LinkedIn experience recovery", () => {
 					stage: "SPLITTING_EXPERIENCE",
 					statusUrl: "/api/jobs/linkedin-job",
 					reused: false,
-					inputRefs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null }
+					inputRefs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null, voiceSessionId: null }
 				}, { status: 202 });
 			}),
 			http.get("*/api/jobs/linkedin-job", () => {
@@ -157,7 +157,7 @@ describe("LinkedIn experience recovery", () => {
 					createdAt: "2026-09-30T00:00:00Z",
 					startedAt: "2026-09-30T00:00:00Z",
 					completedAt: null,
-					inputRefs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null }
+					inputRefs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null, voiceSessionId: null }
 				});
 			})
 		);

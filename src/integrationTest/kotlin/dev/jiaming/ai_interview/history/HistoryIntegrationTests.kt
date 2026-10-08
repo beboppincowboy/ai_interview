@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.history
 
 import dev.jiaming.ai_interview.common.LocalUserService
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeAll
@@ -17,6 +18,56 @@ import java.util.UUID
 
 @Testcontainers
 class HistoryIntegrationTests {
+    @Test
+    fun voiceHistoryIncludesOnlyOwnedSavedRunsAndRetainsReportsAfterJobRetention() {
+        val resume = resume(owner, "Backend")
+        val job = targetJob(owner, "Acme")
+        val set = practiceSet(owner, resume, job)
+        val draft = voice(owner, set, resume, job, saved = false)
+        val pending = voice(owner, set, resume, job, saved = true)
+        val failed = voice(owner, set, resume, job, saved = true, status = "FAILED")
+        val complete = voice(owner, set, resume, job, saved = true, report = """{"overallScore":0}""")
+        jdbc.update("DELETE FROM ai_interview_app.background_jobs WHERE id = (SELECT report_job_id FROM ai_interview_app.voice_sessions WHERE id = ?)", complete)
+        val foreign = id()
+        jdbc.update("INSERT INTO ai_interview_app.app_users (id,email) VALUES (?,?)", foreign, "$foreign@history.test")
+        val fr = resume(foreign, "Private")
+        val fj = targetJob(foreign, "Private job")
+        voice(foreign, practiceSet(foreign, fr, fj), fr, fj, saved = true)
+
+        val rows = jacksonObjectMapper().findAndRegisterModules().valueToTree<com.fasterxml.jackson.databind.JsonNode>(history(owner))["voiceSessions"]
+        assertThat(rows).isNotNull()
+        assertThat(rows.map { UUID.fromString(it["id"].asText()) }).containsExactlyInAnyOrder(pending, failed, complete).doesNotContain(draft)
+        assertThat(rows.first { it["id"].asText() == pending.toString() }["reportStatus"].asText()).isEqualTo("QUEUED")
+        assertThat(rows.first { it["id"].asText() == failed.toString() }["reportStatus"].asText()).isEqualTo("FAILED")
+        val done = rows.first { it["id"].asText() == complete.toString() }
+        assertThat(dev.jiaming.ai_interview.common.DeleteImpactService(jdbc).forResume(owner, resume).voiceSessions).isEqualTo(3)
+        assertThat(dev.jiaming.ai_interview.common.countSavedVoiceSessions(jdbc, owner, "target_job_id", job)).isEqualTo(3)
+        assertThat(done["reportStatus"].asText()).isEqualTo("SUCCEEDED")
+        assertThat(done["overallScore"].asInt()).isZero()
+        assertThat(done["selectedCount"].asInt()).isEqualTo(2)
+        assertThat(done["answeredCount"].asInt()).isEqualTo(1)
+        assertThat(done["resumeName"].asText()).isEqualTo("Backend")
+        assertThat(done["targetJobName"].asText()).isEqualTo("Acme")
+    }
+
+    private fun voice(user: UUID, set: UUID, resume: UUID, job: UUID, saved: Boolean, status: String = "QUEUED", report: String? = null): UUID {
+        val session = id()
+        val reportJob = id()
+        if (saved) jdbc.update(
+            "INSERT INTO ai_interview_app.background_jobs (id,user_id,job_type,resource_type,resource_id,status,stage,request_payload,max_attempts) VALUES (?,?,'VOICE_REPORT','voice-session',?,?, 'QUEUED','{}'::jsonb,3)",
+            reportJob, user, session, status,
+        )
+        jdbc.update(
+            """
+                INSERT INTO ai_interview_app.voice_sessions (id,user_id,practice_set_id,resume_id,target_job_id,questions,run_deadline,draft_expires_at,transcript,transcript_hash,saved_at,submission_job_id,report_job_id,report)
+                VALUES (?,?,?,?,?,'[{"id":"q1"},{"id":"q2"}]'::jsonb,now()+interval '20 minutes',now()+interval '24 hours',?::jsonb,?,CASE WHEN ? THEN now() END,?,?,?::jsonb)
+            """.trimIndent(),
+            session,user,set,resume,job,if (saved) """{"answers":[{"answerText":"An answer"},{"answerText":"  "}]}""" else null,
+            if (saved) "hash" else null,saved,if (saved) reportJob else null,if (saved) reportJob else null,report,
+        )
+        return session
+    }
+
     @Test
     fun aNewUserGetsThreeEmptyArrays() {
         assertThat(history(owner)).isEqualTo(HistoryResponse(emptyList(), emptyList(), emptyList()))

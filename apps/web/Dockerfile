@@ -12,6 +12,9 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 # "all" builds a demo image that runs on mock data; production keeps mocks off.
 ARG VITE_API_MOCKS=off
 ENV VITE_API_MOCKS=${VITE_API_MOCKS}
+# Shows the spoken-interview card. Only the local docker-compose.voice.yml override sets it; images stay voice-off.
+ARG VITE_VOICE_ENABLED=false
+ENV VITE_VOICE_ENABLED=${VITE_VOICE_ENABLED}
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:alpine AS runtime

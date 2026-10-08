@@ -27,7 +27,7 @@ import type {
   TargetJob,
   TargetJobCreated,
   TargetJobDetail,
-  UpdateResumeRequest
+  UpdateResumeRequest, VoiceSession, VoiceTranscript, VoiceSaveResult
 } from "@/lib/api/types";
 import * as fixtures from "./fixtures";
 import { activeJob, jobState, type JobFailure, type MockJob } from "./jobSimulator";
@@ -62,10 +62,11 @@ type Db = {
   sets: Record<string, StoredSet>;
   jobs: Record<string, MockJob>;
   failNext: Partial<Record<JobType, JobFailure>>;
+  voiceSessions: Record<string, VoiceSession>;
 };
 
 const emptyDb = (): Db => ({
-  resumes: {}, targetJobs: {}, experiences: {}, fits: {}, suggestions: {}, sets: {}, jobs: {}, failNext: {}
+  resumes: {}, targetJobs: {}, experiences: {}, fits: {}, suggestions: {}, sets: {}, jobs: {}, failNext: {}, voiceSessions: {}
 });
 
 export type MockStoreOptions = {
@@ -135,7 +136,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       createdAt: now(),
       queuedMs,
       stageMs,
-      refs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null, ...refs },
+      refs: { resumeId: null, targetJobId: null, practiceSetId: null, attemptId: null, voiceSessionId: null, ...refs },
       fail: db.failNext[type] ?? null,
       applied: false,
       result: null,
@@ -236,6 +237,21 @@ export function createMockStore(options: MockStoreOptions = {}) {
         attempt.feedback = fixtures.answerFeedback(attempt.text);
         attempt.status = "SCORED";
         return attempt.feedback;
+      }
+      case "VOICE_REPORT": {
+        const session = job.refs.voiceSessionId ? db.voiceSessions[job.refs.voiceSessionId] : undefined;
+        if (!session?.transcript || session.reportJobId !== job.id || session.report) return null;
+        const answers = session.questions.flatMap((q) => {
+          const answer = session.transcript!.answers.find((a) => a.questionId === q.id);
+          return answer?.answerText ? [{ ...fixtures.answerFeedback(answer.answerText), questionId: q.id, incomplete: answer.incomplete }] : [];
+        });
+        session.report = {
+          selectedCount: session.questions.length, answeredCount: answers.length,
+          overallScore: Math.round(answers.reduce((sum, a) => sum + a.score, 0) / answers.length), answers,
+          weakestQuestionIds: [...answers].sort((a, b) => a.score - b.score).slice(0, 3).map((a) => a.questionId),
+          unansweredQuestionIds: session.questions.filter((q) => !answers.some((a) => a.questionId === q.id)).map((q) => q.id)
+        };
+        return session.report;
       }
     }
   }
@@ -657,6 +673,72 @@ export function createMockStore(options: MockStoreOptions = {}) {
     return publicAttempts(db, question.attempts).find((candidate) => candidate.id === attemptId)!;
   });
 
+  // ---- voice sessions ------------------------------------------------------------------------
+
+  function requireVoice(db: Db, id: string) {
+    const session = db.voiceSessions[id];
+    if (!session) throw new MockHttpError(404, "VOICE_SESSION_NOT_FOUND", "Interview session was not found");
+    if (session.status !== "SAVED" && Date.parse(session.draftExpiresAt) <= now()) session.status = "EXPIRED";
+    return session;
+  }
+
+  const createVoiceSession = (practiceSetId: unknown): VoiceSession => tx((db) => {
+    const set = requireSet(db, String(practiceSetId ?? ""));
+    const questions = set.questions.filter((q) => q.origin === "AI").slice(0, 6).map(({ id, text, category, expectedSignals }) => ({ id, text, category, expectedSignals }));
+    if (!questions.length) throw new MockHttpError(409, "PRACTICE_SET_NOT_READY", "Practice questions are not ready");
+    const session: VoiceSession = {
+      id: crypto.randomUUID(), practiceSetId: set.id, resumeId: set.resumeId, targetJobId: set.targetJobId,
+      status: "DRAFT", questions, transcript: null, submissionJobId: null, reportJobId: null, report: null,
+      createdAt: iso(), runDeadline: iso(now() + 20 * 60_000), draftExpiresAt: iso(now() + 24 * 60 * 60_000), savedAt: null
+    };
+    db.voiceSessions[session.id] = session;
+    return session;
+  });
+
+  const getVoiceSession = (id: string) => tx((db) => requireVoice(db, id));
+  const saveVoiceSession = (id: string, input: unknown): VoiceSaveResult => tx((db) => {
+    const session = requireVoice(db, id);
+    const supplied = (input as Partial<VoiceTranscript> | null)?.answers;
+    if (!Array.isArray(supplied)) throw new MockHttpError(400, "INVALID_REQUEST", "answers is required");
+    const seen = new Set<string>();
+    const answers = supplied.map((answer) => {
+      if (!answer || !session.questions.some((q) => q.id === answer.questionId) || seen.has(answer.questionId) || typeof answer.answerText !== "string" || typeof answer.interviewerText !== "string" || typeof answer.incomplete !== "boolean") throw new MockHttpError(400, "INVALID_REQUEST", "Invalid transcript answer");
+      seen.add(answer.questionId);
+      const answerText = answer.answerText.trim();
+      if (answerText.length > 4_000) throw new MockHttpError(400, "ANSWER_TOO_LONG", "answerText must be at most 4000 characters");
+      return { questionId: answer.questionId, interviewerText: answer.interviewerText.trim(), answerText, incomplete: answer.incomplete };
+    }).sort((a, b) => session.questions.findIndex((q) => q.id === a.questionId) - session.questions.findIndex((q) => q.id === b.questionId));
+    if (!answers.some((a) => a.answerText)) throw new MockHttpError(400, "ANSWER_EMPTY", "At least one answer must not be blank");
+    const transcript = { answers };
+    const normalized = JSON.stringify(transcript);
+    if (new TextEncoder().encode(normalized).length > 64 * 1024) throw new MockHttpError(400, "TRANSCRIPT_TOO_LARGE", "The transcript is too large");
+    if (session.transcript) {
+      if (JSON.stringify(session.transcript) !== normalized) throw new MockHttpError(409, "VOICE_SESSION_ALREADY_SAVED", "This interview was already saved");
+      return { session, replayed: true };
+    }
+    if (session.status === "EXPIRED") throw new MockHttpError(409, "VOICE_SESSION_EXPIRED", "The interview draft expired before it was saved");
+    const job = startJob(db, "VOICE_REPORT", { resumeId: session.resumeId, targetJobId: session.targetJobId, voiceSessionId: id });
+    Object.assign(session, { status: "SAVED", transcript, savedAt: iso(), submissionJobId: job.id, reportJobId: job.id });
+    return { session, replayed: false };
+  });
+
+  const retryVoiceReport = (id: string) => tx((db) => {
+    const session = requireVoice(db, id);
+    if (session.status !== "SAVED") throw new MockHttpError(404, "VOICE_SESSION_NOT_FOUND", "Interview session was not found");
+    if (session.report) return session;
+    const old = session.reportJobId ? db.jobs[session.reportJobId] : undefined;
+    if (!old || jobState(old, now()).status !== "FAILED") throw new MockHttpError(409, "VOICE_REPORT_NOT_RETRYABLE", "Only a failed current report can be retried");
+    session.reportJobId = startJob(db, "VOICE_REPORT", { resumeId: session.resumeId, targetJobId: session.targetJobId, voiceSessionId: id }).id;
+    return session;
+  });
+
+  const deleteVoiceSession = (id: string, draftOnly = false) => tx((db) => {
+    const session = requireVoice(db, id);
+    if (draftOnly && session.status === "SAVED") throw new MockHttpError(409, "VOICE_SESSION_ALREADY_SAVED", "This interview was already saved");
+    removeJobs(db, (job) => job.refs.voiceSessionId === id);
+    delete db.voiceSessions[id];
+  });
+
   // ---- deletes (§3.6-3.7, §4.5-4.6, §5.6-5.7) ------------------------------------------------
 
   function pairsMatching(db: Db, match: (resumeId: string, targetJobId: string) => boolean) {
@@ -670,6 +752,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
     const { fits, suggestionSets, sets } = pairsMatching(db, match);
     return {
       scores,
+      voiceSessions: Object.values(db.voiceSessions).filter((v) => v.status === "SAVED" && match(v.resumeId, v.targetJobId)).length,
       fits: fits.filter(([, entry]) => entry.result).length,
       suggestionSets: suggestionSets.filter(([, entry]) => entry.result).length,
       practiceSets: sets.length,
@@ -684,6 +767,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
     for (const [key] of fits) delete db.fits[key];
     for (const [key] of suggestionSets) delete db.suggestions[key];
     for (const set of sets) delete db.sets[set.id];
+    for (const session of Object.values(db.voiceSessions)) if (match(session.resumeId, session.targetJobId)) delete db.voiceSessions[session.id];
   }
 
   function removeJobs(db: Db, match: (job: MockJob) => boolean, keepJobId?: string) {
@@ -726,6 +810,14 @@ export function createMockStore(options: MockStoreOptions = {}) {
   // ---- history (§9) ----------------------------------------------------------------------------
 
   const history = (): History => tx((db) => ({
+    voiceSessions: Object.values(db.voiceSessions).filter((v) => v.status === "SAVED")
+      .sort((a, b) => b.savedAt!.localeCompare(a.savedAt!)).map((v) => ({
+        id: v.id, practiceSetId: v.practiceSetId, resumeId: v.resumeId, resumeName: db.resumes[v.resumeId].name,
+        targetJobId: v.targetJobId, targetJobName: db.targetJobs[v.targetJobId].name, savedAt: v.savedAt!,
+        selectedCount: v.questions.length, answeredCount: v.transcript!.answers.filter((a) => a.answerText.trim()).length,
+        overallScore: v.report?.overallScore ?? null, reportJobId: v.reportJobId!,
+        reportStatus: v.report ? "SUCCEEDED" : (v.reportJobId && db.jobs[v.reportJobId] ? jobState(db.jobs[v.reportJobId], now()).status : "FAILED")
+      })),
     resumes: Object.values(db.resumes).sort(newestFirst).map((resume) => ({
       id: resume.id,
       name: resume.name,
@@ -785,6 +877,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
     createExperience, splitLinkedIn, saveExperienceBatch, listExperiences, renameExperience, experienceImpact, deleteExperience,
     getFit, runFit, getSuggestions, runSuggestions,
     createPracticeSet, getPracticeSet, retryPracticeSet, addQuestion, submitAttempt, retryAttempt,
+    createVoiceSession, getVoiceSession, saveVoiceSession, retryVoiceReport, deleteVoiceSession,
     history,
     failNext,
     reset
