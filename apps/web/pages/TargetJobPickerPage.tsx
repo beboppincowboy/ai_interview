@@ -18,7 +18,7 @@ export default function TargetJobPickerPage() {
   const jobs = useTargetJobs();
   const choose = (targetJobId: string) => {
     saveLastPair({ resumeId, targetJobId });
-    void navigate({ to: "/flow/$resumeId/jobs/$jobId", params: { resumeId, jobId: targetJobId } });
+    void navigate({ to: "/flow/$resumeId/jobs/$targetJobId", params: { resumeId, targetJobId } });
   };
   if (isNotFound(resume.error)) return <DeletedState what="resume" />;
   const add = <AddTargetJobDialog onAdded={(job) => choose(job.id)} />;

@@ -84,7 +84,7 @@ class CoachPromptBuilder {
         inputs = listOf("context" to context.context)
     )
 
-    fun buildExperienceSuggestionsPrompt(resumeText: String, jobDescription: String, sources: List<Pair<SuggestionSource, String>>): String = prompt(
+    fun buildExperienceSuggestionsPrompt(resumeText: String, targetJobText: String, sources: List<Pair<SuggestionSource, String>>): String = prompt(
         role = "You are a careful career coach helping a candidate tailor one resume to one target job.",
         steps = listOf(
             "Read the requirements in <job_description>.",
@@ -106,7 +106,7 @@ class CoachPromptBuilder {
             }
         """,
         inputs = listOf(
-            "job_description" to jobDescription,
+            "job_description" to targetJobText,
             "selected_resume" to resumeText,
             "sources" to sources.joinToString("\n\n") { (source, text) -> "[sourceId=${source.id} type=${source.type} name=${source.name}]\n$text" }
         )

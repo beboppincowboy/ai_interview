@@ -40,7 +40,11 @@ export type JobInputRefs = {
   voiceSessionId: string | null;
 };
 
-export type ActiveJob = {
+/**
+ * The newest background job for a resource, in any status: it can be SUCCEEDED or FAILED, so check `status` before
+ * showing progress. A resource's `latestJob` is null only when no job was ever submitted for it.
+ */
+export type LatestJob = {
   jobId: string;
   jobType: JobType;
   status: JobStatus;
@@ -119,7 +123,8 @@ export type Resume = {
   originalFilename: string | null;
   status: "PROCESSING" | "READY" | "FAILED";
   latestScore: ScoreSummary | null;
-  activeJob: ActiveJob | null;
+  /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
+  latestJob: LatestJob | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -156,7 +161,8 @@ export type FitView = {
   targetJobId: string;
   result: JobFitResult | null;
   createdAt: string | null;
-  activeJob: ActiveJob | null;
+  /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
+  latestJob: LatestJob | null;
 };
 
 export type SuggestionsView = {
@@ -166,7 +172,8 @@ export type SuggestionsView = {
   stale: boolean;
   result: ExperienceSuggestionsResult | null;
   createdAt: string | null;
-  activeJob: ActiveJob | null;
+  /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
+  latestJob: LatestJob | null;
 };
 
 // §7 Practice
@@ -177,7 +184,8 @@ export type PracticeSet = {
   mode: "PRACTICE";
   status: "GENERATING" | "READY" | "FAILED";
   questions: Question[];
-  activeJob: ActiveJob | null;
+  /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
+  latestJob: LatestJob | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -200,7 +208,8 @@ export type Attempt = {
   status: "PENDING" | "SCORED" | "FAILED";
   feedback: AnswerFeedbackResult | null;
   scoreDelta: number | null;
-  activeJob: ActiveJob | null;
+  /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
+  latestJob: LatestJob | null;
   createdAt: string;
 };
 

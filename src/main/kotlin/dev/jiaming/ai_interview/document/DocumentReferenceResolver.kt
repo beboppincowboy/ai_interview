@@ -1,7 +1,7 @@
 package dev.jiaming.ai_interview.document
 
 import dev.jiaming.ai_interview.common.ApiRequestException
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.resume.ResumePersistenceService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -9,14 +9,14 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.Optional
 import java.util.UUID
 
-/** Loads the stored resume and optional job description a background job references; there is no text or latest-resume fallback. */
+/** Loads the stored resume and optional target job a background job references; there is no text or latest-resume fallback. */
 @Service
 class DocumentReferenceResolver(
     private val resumePersistenceService: ResumePersistenceService,
-    private val jobDescriptionPersistenceService: JobDescriptionPersistenceService,
+    private val targetJobPersistenceService: TargetJobPersistenceService,
 ) {
     @Transactional(readOnly = true)
-    fun resolveStrict(userId: UUID, resumeId: UUID?, jobDescriptionId: UUID?): ResolvedJobInputs {
+    fun resolveStrict(userId: UUID, resumeId: UUID?, targetJobId: UUID?): ResolvedJobInputs {
         if (resumeId == null) {
             throw ApiRequestException(
                 HttpStatus.BAD_REQUEST,
@@ -30,12 +30,12 @@ class DocumentReferenceResolver(
                 ApiRequestException(HttpStatus.NOT_FOUND, "RESUME_NOT_FOUND", "Resume was not found")
             } else resumeNotReady()
         }
-        val jobDescription = if (jobDescriptionId == null) Optional.empty() else Optional.of(
-            jobDescriptionPersistenceService.findDocument(userId, jobDescriptionId).orElseThrow {
+        val targetJob = if (targetJobId == null) Optional.empty() else Optional.of(
+            targetJobPersistenceService.findDocument(userId, targetJobId).orElseThrow {
                 ApiRequestException(HttpStatus.NOT_FOUND, "TARGET_JOB_NOT_FOUND", "Target job was not found")
             }
         )
-        return ResolvedJobInputs(resume, jobDescription)
+        return ResolvedJobInputs(resume, targetJob)
     }
 
     private fun resumeNotReady() = ApiRequestException(HttpStatus.CONFLICT, "RESUME_NOT_READY", "Resume is not ready for analysis")

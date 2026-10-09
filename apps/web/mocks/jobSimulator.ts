@@ -1,5 +1,5 @@
 // Job state is derived from the stored creation time, not timers, so a job keeps advancing across reloads.
-import type { ActiveJob, JobError, JobInputRefs, JobStage, JobStatus, JobType } from "@/lib/api/types";
+import type { LatestJob, JobError, JobInputRefs, JobStage, JobStatus, JobType } from "@/lib/api/types";
 
 export const MAX_ATTEMPTS = 3;
 
@@ -82,7 +82,7 @@ export function jobState(job: MockJob, now: number): JobState {
   };
 }
 
-export function activeJob(job: MockJob | undefined, now: number): ActiveJob | null {
+export function latestJob(job: MockJob | undefined, now: number): LatestJob | null {
   if (!job) return null;
   const { status, stage, attempts, error } = jobState(job, now);
   return { jobId: job.id, jobType: job.type, status, stage, attempts, maxAttempts: MAX_ATTEMPTS, error };

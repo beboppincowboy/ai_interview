@@ -10,7 +10,7 @@ import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
 import dev.jiaming.ai_interview.common.RuntimeModeProperties
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobDispatcher
 import dev.jiaming.ai_interview.jobs.JobEffectMaterializationService
@@ -60,7 +60,7 @@ class JobFitIntegrationTests {
         val view = fits.get(resumeId, targetJobId)
         assertThat(view.result).isNull()
         assertThat(view.createdAt).isNull()
-        assertThat(view.activeJob).isNull()
+        assertThat(view.latestJob).isNull()
 
         assertThatThrownBy { fits.get(UUID.randomUUID(), targetJobId) }
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_FOUND") }
@@ -85,7 +85,7 @@ class JobFitIntegrationTests {
             executor.shutdownNow()
         }
         assertThat(count("job_fits")).isEqualTo(1)
-        assertThat(fits.get(resumeId, targetJobId).activeJob?.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(fits.get(resumeId, targetJobId).latestJob?.status).isEqualTo(JobStatus.QUEUED)
     }
 
     @Test
@@ -103,7 +103,7 @@ class JobFitIntegrationTests {
         val view = fits.get(resumeId, targetJobId)
         assertThat(view.result?.fitScore).isEqualTo(81)
         assertThat(view.createdAt).isNotNull()
-        assertThat(view.activeJob?.jobId).isEqualTo(second)
+        assertThat(view.latestJob?.jobId).isEqualTo(second)
     }
 
     @Test
@@ -198,9 +198,9 @@ class JobFitIntegrationTests {
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
-            targetJobs = TargetJobService(jdbc, local, JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
+            targetJobs = TargetJobService(jdbc, local, TargetJobPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
             materialization = JobEffectMaterializationService(jdbc, mapper)
         }
     }

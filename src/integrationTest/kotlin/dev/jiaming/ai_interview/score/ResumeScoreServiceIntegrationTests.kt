@@ -99,7 +99,7 @@ class ResumeScoreServiceIntegrationTests {
         assertThat(first.latestScore?.overall).isEqualTo(70)
         assertThat(first.latestScore?.stale).isFalse()
         assertThat(first.score?.overall).isEqualTo(70)
-        assertThat(first.activeJob?.jobType).isEqualTo(JobType.RESUME_SCORE)
+        assertThat(first.latestJob?.jobType).isEqualTo(JobType.RESUME_SCORE)
 
         library.patch(resumeId, mapOf("jobTitle" to null))
         assertThat(library.get(resumeId).latestScore?.stale).isTrue()
@@ -248,7 +248,7 @@ class ResumeScoreServiceIntegrationTests {
             ), mapper)
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
             jobs = BackgroundJobStore(jdbc, mapper)
             materialization = JobEffectMaterializationService(jdbc, mapper)

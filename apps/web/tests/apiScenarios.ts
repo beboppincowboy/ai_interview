@@ -232,7 +232,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
       await post<JobAccepted>(`${pair(resume.id)}/suggestions`));
     const otherSuggestions = await post<JobAccepted>(`${pair(other.id)}/suggestions`);
     const set = await createSet(resume.id, job.id);
-    const setJobId = set.activeJob!.jobId;
+    const setJobId = set.latestJob!.jobId;
     const recordedJobIds = [score.jobId, fit.jobId, suggestions.jobId, setJobId];
     await settle([...recordedJobIds, otherSuggestions.jobId]);
     // The second suggestions job is read too, so suggestion items get two chances to arrive non-empty.
@@ -241,8 +241,8 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     const ready = record("GET /api/practice-sets/{id} (ready)", await readSet(set.id));
     const attempt = record("POST /api/practice-sets/{id}/questions/{id}/attempts",
       await post<Attempt>(`${base}/api/practice-sets/${set.id}/questions/${ready.questions[0].id}/attempts`, { text: "My first answer" }));
-    await settle([attempt.activeJob!.jobId]);
-    await readJob(attempt.activeJob!.jobId);
+    await settle([attempt.latestJob!.jobId]);
+    await readJob(attempt.latestJob!.jobId);
 
     const preview = record("GET /api/resumes/{id}/delete-impact", await get<DeleteImpact>(`${base}/api/resumes/${resume.id}/delete-impact`));
     expect(preview).toEqual({ scores: 1, fits: 1, suggestionSets: 1, practiceSets: 1, attempts: 1, staleSuggestionSets: 1, voiceSessions: 0 });
@@ -269,9 +269,9 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     const resume = await paste("Backend");
     const job = await targetJob();
     const created = await createSet(resume.id, job.id);
-    expect(created).toMatchObject({ status: "GENERATING", questions: [], activeJob: { jobType: "PRACTICE_QUESTIONS" } });
+    expect(created).toMatchObject({ status: "GENERATING", questions: [], latestJob: { jobType: "PRACTICE_QUESTIONS" } });
 
-    await settle([created.activeJob!.jobId]);
+    await settle([created.latestJob!.jobId]);
     const ready = record("GET /api/practice-sets/{id} (ready)", await readSet(created.id));
     expect(ready.status).toBe("READY");
     expect(ready.questions.length).toBeGreaterThanOrEqual(3);
@@ -285,22 +285,30 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     const resume = await paste("Backend");
     const job = await targetJob();
     const set = await createSet(resume.id, job.id);
-    await settle([set.activeJob!.jobId]);
+    await settle([set.latestJob!.jobId]);
     const question = (await readSet(set.id)).questions[0];
     const path = `${base}/api/practice-sets/${set.id}/questions/${question.id}/attempts`;
 
     const first = await post<Attempt>(path, { text: "Short answer" });
-    await settle([first.activeJob!.jobId]);
+    await settle([first.latestJob!.jobId]);
     expect(await errorOf(post(path, { text: " Short answer " }))).toMatchObject({ status: 409, code: "ANSWER_UNCHANGED" });
     expect(await errorOf(post(path, { text: "   " }))).toMatchObject({ status: 400, code: "ANSWER_EMPTY" });
 
     const second = record("POST /api/practice-sets/{id}/questions/{id}/attempts",
       await post<Attempt>(path, { text: "A much longer answer with context, the action I took and a measured result." }));
     expect(second).toMatchObject({ number: 2, status: "PENDING" });
-    await settle([second.activeJob!.jobId]);
+    await settle([second.latestJob!.jobId]);
     const attempts = record("GET /api/practice-sets/{id} (scored attempts)", await readSet(set.id)).questions[0].attempts;
     expect(attempts.map((attempt) => attempt.status)).toEqual(["SCORED", "SCORED"]);
     expect(attempts[1].scoreDelta).toBe(attempts[1].feedback!.score - attempts[0].feedback!.score);
+  });
+
+  scenario("keeps a finished job as the resume's latestJob", async () => {
+    const resume = await paste("Backend");
+    const score = await post<JobAccepted>(`${base}/api/resumes/${resume.id}/score`);
+    await settle([score.jobId]);
+    const finished = await get<Resume>(`${base}/api/resumes/${resume.id}`);
+    expect(finished.latestJob).toMatchObject({ jobId: score.jobId, jobType: "RESUME_SCORE", status: "SUCCEEDED" });
   });
 
   scenario("marks the score stale when the job title changes", async () => {
@@ -323,7 +331,7 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     const resume = await paste("Voice backend");
     const job = await targetJob();
     const set = await createSet(resume.id, job.id);
-    await settle([set.activeJob!.jobId]);
+    await settle([set.latestJob!.jobId]);
     const create = () => post<VoiceSession>(`${base}/api/voice-sessions`, { practiceSetId: set.id });
     const draft = record("POST /api/voice-sessions", await create());
     expect(draft.status).toBe("DRAFT");

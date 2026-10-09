@@ -58,7 +58,7 @@ class VoiceReportJobHandler(
             }
             val feedback = savedCheckpoint?.feedback ?: coachService.scorePracticeAnswer(
                 CoachFeedbackInput(
-                    documents.resume(), documents.jobDescription(), question.text, question.category,
+                    documents.resume(), documents.targetJob(), question.text, question.category,
                     question.expectedSignals, answer.answerText, answer.incomplete,
                 ),
             ).also { result ->

@@ -5,17 +5,17 @@ import java.util.Optional
 
 class CoachFeedbackInput(
     private val resumeValue: ResolvedDocument,
-    jobDescriptionValue: Optional<ResolvedDocument>?,
+    targetJobValue: Optional<ResolvedDocument>?,
     private val questionTextValue: String?,
     private val categoryValue: String?,
     expectedSignalsValue: List<String>?,
     private val answerTextValue: String?,
     private val incompleteCaptureValue: Boolean = false,
 ) {
-    private val jobDescriptionValue = jobDescriptionValue ?: Optional.empty()
+    private val targetJobValue = targetJobValue ?: Optional.empty()
     private val expectedSignalsValue = expectedSignalsValue?.toList() ?: emptyList()
     fun resume() = resumeValue
-    fun jobDescription() = jobDescriptionValue
+    fun targetJob() = targetJobValue
     fun questionText() = questionTextValue
     fun category() = categoryValue
     fun expectedSignals() = expectedSignalsValue
@@ -23,15 +23,15 @@ class CoachFeedbackInput(
     fun incompleteCapture() = incompleteCaptureValue
 
     override fun equals(other: Any?): Boolean = other is CoachFeedbackInput &&
-        resumeValue == other.resumeValue && jobDescriptionValue == other.jobDescriptionValue &&
+        resumeValue == other.resumeValue && targetJobValue == other.targetJobValue &&
         questionTextValue == other.questionTextValue && categoryValue == other.categoryValue &&
         expectedSignalsValue == other.expectedSignalsValue && answerTextValue == other.answerTextValue &&
         incompleteCaptureValue == other.incompleteCaptureValue
 
     override fun hashCode(): Int = listOf(
-        resumeValue, jobDescriptionValue, questionTextValue, categoryValue, expectedSignalsValue, answerTextValue, incompleteCaptureValue
+        resumeValue, targetJobValue, questionTextValue, categoryValue, expectedSignalsValue, answerTextValue, incompleteCaptureValue
     ).hashCode()
 
     override fun toString(): String =
-        "CoachFeedbackInput[resume=$resumeValue, jobDescription=$jobDescriptionValue, questionText=$questionTextValue, category=$categoryValue, expectedSignals=$expectedSignalsValue, answerText=$answerTextValue, incompleteCapture=$incompleteCaptureValue]"
+        "CoachFeedbackInput[resume=$resumeValue, targetJob=$targetJobValue, questionText=$questionTextValue, category=$categoryValue, expectedSignals=$expectedSignalsValue, answerText=$answerTextValue, incompleteCapture=$incompleteCaptureValue]"
 }

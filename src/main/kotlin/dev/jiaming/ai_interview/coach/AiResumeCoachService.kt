@@ -26,15 +26,15 @@ class AiResumeCoachService(
     }
 
     // ponytail: per-source budget only (KTD7); add a total prompt cap if users keep hundreds of sources.
-    fun suggestExperiences(resume: ResolvedDocument, jobDescription: ResolvedDocument, sources: List<SuggestionSourceInput>): ExperienceSuggestionsResult {
+    fun suggestExperiences(resume: ResolvedDocument, targetJob: ResolvedDocument, sources: List<SuggestionSourceInput>): ExperienceSuggestionsResult {
         val texts = sources.map { input ->
             input.source to when (input) {
-                is SuggestionSourceInput.Resume -> ragContextService.suggestionSourceText(input.document, jobDescription)
+                is SuggestionSourceInput.Resume -> ragContextService.suggestionSourceText(input.document, targetJob)
                 is SuggestionSourceInput.Experience -> input.text
             }
         }
         val prompt = promptBuilder.buildExperienceSuggestionsPrompt(
-            ragContextService.suggestionSourceText(resume, jobDescription), jobDescription.normalizedText(), texts
+            ragContextService.suggestionSourceText(resume, targetJob), targetJob.normalizedText(), texts
         )
         return generateStructured(prompt, ExperienceSuggestionsResponse::class.java) {
             responseMapper.normalizeExperienceSuggestions(it, sources.map(SuggestionSourceInput::source))

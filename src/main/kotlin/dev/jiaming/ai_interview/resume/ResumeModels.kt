@@ -2,7 +2,7 @@ package dev.jiaming.ai_interview.resume
 
 import java.time.Instant
 import java.util.UUID
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.score.ResumeScoreResult
 import dev.jiaming.ai_interview.score.ResumeScoreSummary
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -62,7 +62,8 @@ data class ResumeLibraryItem(
     val originalFilename: String?,
     val status: String,
     val latestScore: ResumeScoreSummary?,
-    val activeJob: ActiveJob?,
+    /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
+    val latestJob: LatestJob?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -76,13 +77,14 @@ data class ResumeLibraryDetail(
     val originalFilename: String?,
     val status: String,
     val latestScore: ResumeScoreSummary?,
-    val activeJob: ActiveJob?,
+    /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
+    val latestJob: LatestJob?,
     val createdAt: Instant,
     val updatedAt: Instant,
     val text: String?,
     val score: ResumeScoreResult?
 ) {
-    fun toItem() = ResumeLibraryItem(id, name, jobTitle, source, originalFilename, status, latestScore, activeJob, createdAt, updatedAt)
+    fun toItem() = ResumeLibraryItem(id, name, jobTitle, source, originalFilename, status, latestScore, latestJob, createdAt, updatedAt)
 }
 
 @JvmRecord

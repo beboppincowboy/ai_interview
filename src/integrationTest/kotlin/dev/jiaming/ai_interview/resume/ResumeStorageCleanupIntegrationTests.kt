@@ -1,5 +1,6 @@
 package dev.jiaming.ai_interview.resume
 
+import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ContentHasher
 import dev.jiaming.ai_interview.common.DeleteImpactService
@@ -172,7 +173,7 @@ class ResumeStorageCleanupIntegrationTests {
             )
             guard = RedisRequestGuard(StringRedisTemplate(), properties, ObjectMapper().findAndRegisterModules())
             library = ResumeLibraryService(
-                jdbc, local, persistence, normalizer, guard, transactions, cleanup, DeleteImpactService(jdbc), ObjectMapper().findAndRegisterModules()
+                jdbc, local, persistence, normalizer, guard, transactions, cleanup, DeleteImpactService(jdbc), ObjectMapper().findAndRegisterModules(), BackgroundJobStore(jdbc, ObjectMapper().findAndRegisterModules())
             )
         }
     }

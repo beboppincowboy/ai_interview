@@ -1,7 +1,7 @@
 package dev.jiaming.ai_interview.suggestions
 
 import dev.jiaming.ai_interview.document.ResolvedDocument
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import java.time.Instant
 import java.util.UUID
 
@@ -29,7 +29,8 @@ data class SuggestionsView(
     val stale: Boolean,
     val result: ExperienceSuggestionsResult?,
     val createdAt: Instant?,
-    val activeJob: ActiveJob?,
+    /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
+    val latestJob: LatestJob?,
 )
 
 /** A prompt source: another resume is narrowed to the budget against the job description; an experience goes in whole. */

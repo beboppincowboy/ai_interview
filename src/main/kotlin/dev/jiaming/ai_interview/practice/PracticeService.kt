@@ -5,7 +5,7 @@ import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.AttemptFeedbackPayload
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobStatus
@@ -258,7 +258,7 @@ class PracticeService(
             val score = row.feedback?.score
             val delta = if (score != null) previousScore?.let { score - it } else null
             if (score != null) previousScore = score
-            AttemptView(row.id, row.number, row.text, status, row.feedback, delta, job?.let(ActiveJob::from), row.createdAt)
+            AttemptView(row.id, row.number, row.text, status, row.feedback, delta, job?.let(LatestJob::from), row.createdAt)
         }
     }
 
@@ -289,7 +289,7 @@ class PracticeService(
             job?.status == JobStatus.FAILED -> PracticeSetStatus.FAILED
             else -> PracticeSetStatus.GENERATING
         }
-        return PracticeSetView(set.id, set.resumeId, set.targetJobId, set.mode, status, questions, job?.let(ActiveJob::from), set.createdAt, set.updatedAt)
+        return PracticeSetView(set.id, set.resumeId, set.targetJobId, set.mode, status, questions, job?.let(LatestJob::from), set.createdAt, set.updatedAt)
     }
 
     /** Locks the pair's rows against deletion and returns whether the resume is READY. */

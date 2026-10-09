@@ -18,7 +18,7 @@ import dev.jiaming.ai_interview.common.RuntimeModeProperties
 import dev.jiaming.ai_interview.document.DocumentReferenceResolver
 import dev.jiaming.ai_interview.document.ResolvedDocument
 import dev.jiaming.ai_interview.experience.ExperienceService
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobDispatcher
 import dev.jiaming.ai_interview.jobs.JobEffectMaterializationService
@@ -84,7 +84,7 @@ class SuggestionsIntegrationTests {
         assertThat(view.sourcesAvailable).isFalse()
         assertThat(view.stale).isFalse()
         assertThat(view.result).isNull()
-        assertThat(view.activeJob).isNull()
+        assertThat(view.latestJob).isNull()
 
         assertThatThrownBy { suggestions.run(resumeId, targetJobId) }
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("NO_EXPERIENCE_SOURCES") }
@@ -119,8 +119,8 @@ class SuggestionsIntegrationTests {
         assertThat(view.sourcesAvailable).isTrue()
         assertThat(view.stale).isFalse()
         assertThat(view.result).isNull()
-        assertThat(view.activeJob?.jobType).isEqualTo(JobType.EXPERIENCE_SUGGESTIONS)
-        assertThat(view.activeJob?.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(view.latestJob?.jobType).isEqualTo(JobType.EXPERIENCE_SUGGESTIONS)
+        assertThat(view.latestJob?.status).isEqualTo(JobStatus.QUEUED)
         assertThat(library.deleteImpact(resumeId).suggestionSets).isZero()
         assertThat(targetJobs.deleteImpact(targetJobId).suggestionSets).isZero()
         assertThat(experiences.deleteImpact(local.localUserId(), experienceId).staleSuggestionSets).isZero()
@@ -138,7 +138,7 @@ class SuggestionsIntegrationTests {
         assertThat(fresh.stale).isFalse()
         assertThat(fresh.createdAt).isNotNull()
         assertThat(fresh.result!!.items.map { it.source }).containsExactly(SuggestionSource(SuggestionSourceType.EXPERIENCE, ledger, "Ledger rewrite"))
-        assertThat(fresh.activeJob?.jobId).isEqualTo(firstJob)
+        assertThat(fresh.latestJob?.jobId).isEqualTo(firstJob)
         assertThat(jobs.findById(firstJob).orElseThrow().resultPayload).isEqualTo(mapper.valueToTree(fresh.result))
 
         insertExperience("Kafka pipeline")
@@ -354,8 +354,8 @@ class SuggestionsIntegrationTests {
             ), mapper)
             val normalizer = ResumeTextNormalizer()
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())
-            val jobDescriptions = JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher())
-            val resolver = DocumentReferenceResolver(persistence, jobDescriptions)
+            val targetJobDocuments = TargetJobPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher())
+            val resolver = DocumentReferenceResolver(persistence, targetJobDocuments)
             val submissions = JobSubmissionService(
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
@@ -363,9 +363,9 @@ class SuggestionsIntegrationTests {
             suggestions = SuggestionsService(jdbc, local, submissions, guard, jobs, mapper, transactions, persistence)
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
-            targetJobs = TargetJobService(jdbc, local, jobDescriptions)
+            targetJobs = TargetJobService(jdbc, local, targetJobDocuments)
             experiences = ExperienceService(jdbc, ContentHasher(), submissions)
             val rag = CoachRagContextService(SectionAwareTextChunker(), indexing, retrieval, SimpleMeterRegistry(),
                 RagProperties(1024, 8, "gemini-embedding-001", "section-block-v3"))

@@ -5,7 +5,7 @@ import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobAcceptedResponse
 import dev.jiaming.ai_interview.jobs.JobSubmissionService
@@ -45,11 +45,11 @@ class SuggestionsService(
             })
         }
         val stale = stored != null && row.sourceIds.orEmpty().toSet() != current.keys
-        val activeJob = row?.id?.let { id ->
+        val latestJob = row?.id?.let { id ->
             backgroundJobStore.findLatestForResource(userId, RESOURCE, id, listOf(JobType.EXPERIENCE_SUGGESTIONS))
-                .map(ActiveJob::from).orElse(null)
+                .map(LatestJob::from).orElse(null)
         }
-        return SuggestionsView(resumeId, targetJobId, current.isNotEmpty(), stale, visible, row?.resultCreatedAt, activeJob)
+        return SuggestionsView(resumeId, targetJobId, current.isNotEmpty(), stale, visible, row?.resultCreatedAt, latestJob)
     }
 
     fun run(resumeId: UUID, targetJobId: UUID): JobAcceptedResponse {

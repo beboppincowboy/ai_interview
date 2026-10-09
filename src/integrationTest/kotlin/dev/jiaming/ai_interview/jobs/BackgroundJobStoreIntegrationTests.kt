@@ -59,7 +59,7 @@ class BackgroundJobStoreIntegrationTests {
         val resume = UUID.randomUUID(); val otherUser = UUID.randomUUID(); jdbcTemplate.update("INSERT INTO ai_interview_app.app_users (id, email) VALUES (?, ?)", otherUser, "$otherUser@ai-interview.test"); val payload = ObjectMapper().createObjectNode()
         val older = store.createIfAbsent(userId, JobType.RESUME_EXTRACTION, "resume", resume, payload, null, 3).orElseThrow(); val newer = store.createIfAbsent(userId, JobType.JOB_FIT, "resume", resume, payload, null, 3).orElseThrow(); val foreign = store.createIfAbsent(otherUser, JobType.JOB_FIT, "resume", resume, payload, null, 3).orElseThrow()
         jdbcTemplate.update("UPDATE ai_interview_app.background_jobs SET created_at = now() - interval '1 minute' WHERE id = ?", older.id); jdbcTemplate.update("UPDATE ai_interview_app.background_jobs SET created_at = now() + interval '1 minute' WHERE id = ?", foreign.id)
-        assertThat(store.findLatestForResource(userId, "resume", resume).map(ActiveJob::from)).contains(ActiveJob(newer.id, JobType.JOB_FIT, JobStatus.QUEUED, JobStage.QUEUED, 0, 3, null))
+        assertThat(store.findLatestForResource(userId, "resume", resume).map(LatestJob::from)).contains(LatestJob(newer.id, JobType.JOB_FIT, JobStatus.QUEUED, JobStage.QUEUED, 0, 3, null))
         assertThat(store.findLatestForResource(userId, "resume", resume, listOf(JobType.RESUME_EXTRACTION)).map { it.id }).contains(older.id); assertThat(store.findLatestForResource(userId, "practice-set", resume)).isEmpty()
     }
     @Test fun latestForResourcesReturnsEachResourcesNewestJobInOneLookup() {

@@ -17,7 +17,7 @@ import dev.jiaming.ai_interview.document.DocumentReferenceResolver
 import dev.jiaming.ai_interview.document.DocumentSourceType
 import dev.jiaming.ai_interview.document.ResolvedDocument
 import dev.jiaming.ai_interview.document.ResolvedJobInputs
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.jobs.BackgroundJob
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobDispatcher
@@ -103,7 +103,7 @@ class VoiceReportIntegrationTests {
         val library = ResumeLibraryService(
             jdbc, local, Mockito.mock(ResumePersistenceService::class.java), ResumeTextNormalizer(),
             Mockito.mock(RedisRequestGuard::class.java), deletionTransactions,
-            Mockito.mock(ResumeStorageCleanupService::class.java), Mockito.mock(DeleteImpactService::class.java), mapper,
+            Mockito.mock(ResumeStorageCleanupService::class.java), Mockito.mock(DeleteImpactService::class.java), mapper, BackgroundJobStore(jdbc, mapper)
         )
         val executor = Executors.newFixedThreadPool(2)
         try {

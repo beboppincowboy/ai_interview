@@ -4,7 +4,6 @@ import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.countPracticeAttempts
 import dev.jiaming.ai_interview.common.countSavedVoiceSessions
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
 import java.sql.ResultSet
 import java.time.Instant
 import java.util.UUID
@@ -17,12 +16,12 @@ import org.springframework.transaction.annotation.Transactional
 class TargetJobService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
-    private val jobDescriptionPersistenceService: JobDescriptionPersistenceService,
+    private val targetJobPersistenceService: TargetJobPersistenceService,
 ) {
     @Transactional
     fun create(name: String, text: String): TargetJobCreateResult {
         val userId = localUserService.localUserId()
-        val saved = jobDescriptionPersistenceService.findOrCreateTargetJob(userId, name, text)
+        val saved = targetJobPersistenceService.findOrCreateTargetJob(userId, name, text)
         val targetJob = findDetail(userId, saved.document.resourceId()) ?: throw notFound()
         return TargetJobCreateResult(targetJob, !saved.created)
     }

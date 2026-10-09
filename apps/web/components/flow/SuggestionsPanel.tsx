@@ -12,10 +12,10 @@ import { useAutoStart } from "./useAutoStart";
 export function SuggestionsPanel({ resumeId, targetJobId }: { resumeId: string; targetJobId: string }) {
   const view = useSuggestions(resumeId, targetJobId);
   const run = useRunSuggestions(resumeId, targetJobId);
-  const { job, timedOut, checkAgain } = useFollowJob(view.data?.activeJob, [scoringKeys.suggestions(resumeId, targetJobId)]);
+  const { job, timedOut, checkAgain } = useFollowJob(view.data?.latestJob, [scoringKeys.suggestions(resumeId, targetJobId)]);
   const data = view.data;
   // Run once when sources exist and nothing has been tried; no request at all without sources (R11).
-  useAutoStart(Boolean(data?.sourcesAvailable && !data.result && !data.activeJob), `${resumeId}:${targetJobId}`, () => run.mutate());
+  useAutoStart(Boolean(data?.sourcesAvailable && !data.result && !data.latestJob), `${resumeId}:${targetJobId}`, () => run.mutate());
 
   return (
     <section aria-labelledby="suggestions-heading" className="space-y-4">

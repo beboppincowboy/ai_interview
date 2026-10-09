@@ -21,7 +21,7 @@ export default function VoicePage() {
 function VoiceInterview({ setId }: { setId: string }) {
   const set = usePracticeSet(setId);
   const retry = useRetryPracticeSet(setId);
-  const generation = useFollowJob(set.data?.activeJob, [practiceKeys.set(setId)]);
+  const generation = useFollowJob(set.data?.latestJob, [practiceKeys.set(setId)]);
   const interview = useVoiceInterview(setId, (set.data?.questions ?? []).filter((question) => question.origin === "AI").slice(0, MAX_VOICE_QUESTIONS));
   const heading = useRef<HTMLHeadingElement>(null);
   const question = interview.questions[interview.index];

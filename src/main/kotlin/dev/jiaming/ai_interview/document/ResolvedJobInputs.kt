@@ -6,18 +6,18 @@ import java.util.Optional
 
 class ResolvedJobInputs @JsonCreator constructor(
     @JsonProperty("resume") private val resolvedResume: ResolvedDocument,
-    @JsonProperty("jobDescription") jobDescription: Optional<ResolvedDocument>?,
+    @JsonProperty("targetJob") targetJob: Optional<ResolvedDocument>?,
 ) {
-    private val resolvedJobDescription = jobDescription ?: Optional.empty()
+    private val resolvedTargetJob = targetJob ?: Optional.empty()
 
     @JsonProperty("resume") fun resume(): ResolvedDocument = resolvedResume
-    @JsonProperty("jobDescription") fun jobDescription(): Optional<ResolvedDocument> = resolvedJobDescription
+    @JsonProperty("targetJob") fun targetJob(): Optional<ResolvedDocument> = resolvedTargetJob
 
     override fun equals(other: Any?): Boolean = other is ResolvedJobInputs &&
-        resolvedResume == other.resolvedResume && resolvedJobDescription == other.resolvedJobDescription
+        resolvedResume == other.resolvedResume && resolvedTargetJob == other.resolvedTargetJob
 
-    override fun hashCode(): Int = listOf(resolvedResume, resolvedJobDescription).hashCode()
+    override fun hashCode(): Int = listOf(resolvedResume, resolvedTargetJob).hashCode()
 
     override fun toString(): String =
-        "ResolvedJobInputs[resume=$resolvedResume, jobDescription=$resolvedJobDescription]"
+        "ResolvedJobInputs[resume=$resolvedResume, targetJob=$resolvedTargetJob]"
 }

@@ -5,7 +5,7 @@ import dev.jiaming.ai_interview.common.ApiExceptionHandler
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobStatus
 import dev.jiaming.ai_interview.jobs.JobType
@@ -44,9 +44,9 @@ class PracticeControllerTests {
             .andExpect(jsonPath("$.mode").value("PRACTICE"))
             .andExpect(jsonPath("$.status").value("GENERATING"))
             .andExpect(jsonPath("$.questions").isEmpty)
-            .andExpect(jsonPath("$.activeJob.jobType").value("PRACTICE_QUESTIONS"))
-            .andExpect(jsonPath("$.activeJob.stage").value("GENERATING_QUESTIONS"))
-            .andExpect(jsonPath("$.activeJob.maxAttempts").value(3))
+            .andExpect(jsonPath("$.latestJob.jobType").value("PRACTICE_QUESTIONS"))
+            .andExpect(jsonPath("$.latestJob.stage").value("GENERATING_QUESTIONS"))
+            .andExpect(jsonPath("$.latestJob.maxAttempts").value(3))
         mockMvc.perform(create("PRACTICE"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("READY"))
@@ -143,7 +143,7 @@ class PracticeControllerTests {
 
     private fun set(status: PracticeSetStatus, questions: List<PracticeQuestionView>) = PracticeSetView(
         UUID.randomUUID(), resumeId, targetJobId, "PRACTICE", status, questions,
-        ActiveJob(UUID.randomUUID(), JobType.PRACTICE_QUESTIONS, JobStatus.PROCESSING, JobStage.GENERATING_QUESTIONS, 1, 3, null),
+        LatestJob(UUID.randomUUID(), JobType.PRACTICE_QUESTIONS, JobStatus.PROCESSING, JobStage.GENERATING_QUESTIONS, 1, 3, null),
         Instant.parse("2026-09-30T12:00:00Z"), Instant.parse("2026-09-30T12:00:00Z"),
     )
 }
