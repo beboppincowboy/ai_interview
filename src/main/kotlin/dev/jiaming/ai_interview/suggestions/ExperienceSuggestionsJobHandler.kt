@@ -24,7 +24,7 @@ class ExperienceSuggestionsJobHandler(
             context.stage(JobStage.RETRIEVING_EXPERIENCE)
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
             val targetJob = documents.targetJob().orElseThrow {
-                IllegalStateException("Experience suggestions ${payload.suggestionsId} have no target job description")
+                IllegalStateException("Experience suggestions ${payload.suggestionsId} have no target job")
             }
             val sources = suggestionsService.promptSources(context.userId(), payload.resumeId)
             context.stage(JobStage.MATCHING_EXPERIENCE)

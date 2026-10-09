@@ -25,7 +25,7 @@ class PracticeQuestionsJobHandler(
         val drafts = context.rootCheckpoint(PracticeQuestionDrafts::class.java, "drafts") ?: run {
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
             val targetJob = documents.targetJob().orElseThrow {
-                IllegalStateException("Practice set ${payload.practiceSetId} has no target job description")
+                IllegalStateException("Practice set ${payload.practiceSetId} has no target job")
             }
             coachService.generatePracticeQuestions(CoachAnalysisInput(documents.resume(), Optional.of(targetJob)))
                 .also { context.saveRootCheckpoint(it, "practice-questions") }

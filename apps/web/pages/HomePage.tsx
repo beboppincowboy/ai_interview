@@ -9,22 +9,22 @@ import { useResumes, useTargetJobs } from "@/lib/query/library";
 function ContinueCard() {
   const [pair] = useState(readLastPair);
   const resumes = useResumes();
-  const jobs = useTargetJobs();
+  const targetJobs = useTargetJobs();
   // Offer Continue only when the stored items still exist.
   const resume = resumes.data?.items.find((item) => item.id === pair?.resumeId);
-  const job = jobs.data?.items.find((item) => item.id === pair?.targetJobId);
+  const targetJob = targetJobs.data?.items.find((item) => item.id === pair?.targetJobId);
   if (!pair || !resume) return null;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Pick up where you left off</CardTitle>
-        <CardDescription>{job ? `${resume.name} × ${job.name}` : resume.name}</CardDescription>
+        <CardDescription>{targetJob ? `${resume.name} × ${targetJob.name}` : resume.name}</CardDescription>
       </CardHeader>
       <CardContent>
         <Button asChild>
-          {job ? (
-            <Link to="/flow/$resumeId/jobs/$targetJobId" params={{ resumeId: resume.id, targetJobId: job.id }}>Continue <ArrowRight /></Link>
+          {targetJob ? (
+            <Link to="/flow/$resumeId/jobs/$targetJobId" params={{ resumeId: resume.id, targetJobId: targetJob.id }}>Continue <ArrowRight /></Link>
           ) : (
             <Link to="/flow/$resumeId" params={{ resumeId: resume.id }}>Continue <ArrowRight /></Link>
           )}

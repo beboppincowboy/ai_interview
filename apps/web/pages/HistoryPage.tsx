@@ -21,7 +21,7 @@ const rowClass = "flex flex-wrap items-center gap-4 rounded-lg border bg-card px
 export default function HistoryPage() {
   const history = useHistory();
   const data = history.data;
-  const empty = data && !data.resumes.some((resume) => resume.scores.length) && !data.targetJobs.some((job) => job.fits.length) && data.practiceSets.length === 0 && data.voiceSessions.length === 0;
+  const empty = data && !data.resumes.some((resume) => resume.scores.length) && !data.targetJobs.some((targetJob) => targetJob.fits.length) && data.practiceSets.length === 0 && data.voiceSessions.length === 0;
 
   return (
     <>
@@ -63,10 +63,10 @@ export default function HistoryPage() {
             })}
           </Section>
           <Section title="Job fit">
-            {data.targetJobs.flatMap((job) => job.fits.map((fit) => (
-              <li key={`${job.id}:${fit.resumeId}`}>
-                <Link to="/flow/$resumeId/jobs/$targetJobId" params={{ resumeId: fit.resumeId, targetJobId: job.id }} className={rowClass}>
-                  <span className="min-w-0 flex-1 truncate"><span className="font-medium">{job.name}</span> <span className="text-muted-foreground">with {fit.resumeName}</span></span>
+            {data.targetJobs.flatMap((targetJob) => targetJob.fits.map((fit) => (
+              <li key={`${targetJob.id}:${fit.resumeId}`}>
+                <Link to="/flow/$resumeId/jobs/$targetJobId" params={{ resumeId: fit.resumeId, targetJobId: targetJob.id }} className={rowClass}>
+                  <span className="min-w-0 flex-1 truncate"><span className="font-medium">{targetJob.name}</span> <span className="text-muted-foreground">with {fit.resumeName}</span></span>
                   <span className="font-semibold">{fit.fitScore}</span>
                 </Link>
               </li>

@@ -25,7 +25,7 @@ class JobFitJobHandler(
         if (result == null) {
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
             val targetJob = documents.targetJob().orElseThrow {
-                IllegalStateException("Job fit ${payload.fitId} has no target job description")
+                IllegalStateException("Job fit ${payload.fitId} has no target job")
             }
             result = coachService.assessJobFit(CoachAnalysisInput(documents.resume(), java.util.Optional.of(targetJob)))
             context.saveRootCheckpoint(result, "job-fit")

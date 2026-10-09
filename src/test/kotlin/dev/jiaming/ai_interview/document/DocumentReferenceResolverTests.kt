@@ -15,9 +15,9 @@ import java.util.UUID
 class DocumentReferenceResolverTests {
 
     private val resumes = Mockito.mock(ResumePersistenceService::class.java)
-    private val jobDescriptions = Mockito.mock(TargetJobPersistenceService::class.java)
+    private val targetJobs = Mockito.mock(TargetJobPersistenceService::class.java)
     private val hasher = ContentHasher()
-    private val resolver = DocumentReferenceResolver(resumes, jobDescriptions)
+    private val resolver = DocumentReferenceResolver(resumes, targetJobs)
     private val userId = UUID.randomUUID()
 
     @Test
@@ -40,14 +40,14 @@ class DocumentReferenceResolverTests {
     }
 
     @Test
-    fun resolvesTheJobDescriptionById() {
+    fun resolvesTheTargetJobById() {
         val resumeId = UUID.randomUUID()
         val targetJobId = UUID.randomUUID()
-        val jd = document(DocumentSourceType.JOB_DESCRIPTION, targetJobId, "Job text")
+        val targetJob = document(DocumentSourceType.JOB_DESCRIPTION, targetJobId, "Job text")
         ready(resumeId, document(DocumentSourceType.RESUME, resumeId, "Resume text"))
-        Mockito.`when`(jobDescriptions.findDocument(userId, targetJobId)).thenReturn(Optional.of(jd))
+        Mockito.`when`(targetJobs.findDocument(userId, targetJobId)).thenReturn(Optional.of(targetJob))
 
-        assertThat(resolver.resolveStrict(userId, resumeId, targetJobId).targetJob()).contains(jd)
+        assertThat(resolver.resolveStrict(userId, resumeId, targetJobId).targetJob()).contains(targetJob)
     }
 
     @Test
@@ -82,7 +82,7 @@ class DocumentReferenceResolverTests {
         val resumeId = UUID.randomUUID()
         val targetJobId = UUID.randomUUID()
         ready(resumeId, document(DocumentSourceType.RESUME, resumeId, "Resume text"))
-        Mockito.`when`(jobDescriptions.findDocument(userId, targetJobId)).thenReturn(Optional.empty())
+        Mockito.`when`(targetJobs.findDocument(userId, targetJobId)).thenReturn(Optional.empty())
 
         expectCode(resumeId, targetJobId, "TARGET_JOB_NOT_FOUND", HttpStatus.NOT_FOUND)
     }

@@ -1,14 +1,12 @@
 package dev.jiaming.ai_interview.document
 
-import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.util.Optional
 
 class ResolvedJobInputs @JsonCreator constructor(
     @JsonProperty("resume") private val resolvedResume: ResolvedDocument,
-    // "jobDescription" is the legacy key for the target job.
-    @JsonProperty("targetJob") @JsonAlias("jobDescription") targetJob: Optional<ResolvedDocument>?,
+    @JsonProperty("targetJob") targetJob: Optional<ResolvedDocument>?,
 ) {
     private val resolvedTargetJob = targetJob ?: Optional.empty()
 
