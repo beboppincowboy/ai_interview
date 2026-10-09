@@ -84,7 +84,7 @@ class SuggestionsIntegrationTests {
         assertThat(view.sourcesAvailable).isFalse()
         assertThat(view.stale).isFalse()
         assertThat(view.result).isNull()
-        assertThat(view.activeJob).isNull()
+        assertThat(view.latestJob).isNull()
 
         assertThatThrownBy { suggestions.run(resumeId, targetJobId) }
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("NO_EXPERIENCE_SOURCES") }
@@ -119,8 +119,8 @@ class SuggestionsIntegrationTests {
         assertThat(view.sourcesAvailable).isTrue()
         assertThat(view.stale).isFalse()
         assertThat(view.result).isNull()
-        assertThat(view.activeJob?.jobType).isEqualTo(JobType.EXPERIENCE_SUGGESTIONS)
-        assertThat(view.activeJob?.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(view.latestJob?.jobType).isEqualTo(JobType.EXPERIENCE_SUGGESTIONS)
+        assertThat(view.latestJob?.status).isEqualTo(JobStatus.QUEUED)
         assertThat(library.deleteImpact(resumeId).suggestionSets).isZero()
         assertThat(targetJobs.deleteImpact(targetJobId).suggestionSets).isZero()
         assertThat(experiences.deleteImpact(local.localUserId(), experienceId).staleSuggestionSets).isZero()
@@ -138,7 +138,7 @@ class SuggestionsIntegrationTests {
         assertThat(fresh.stale).isFalse()
         assertThat(fresh.createdAt).isNotNull()
         assertThat(fresh.result!!.items.map { it.source }).containsExactly(SuggestionSource(SuggestionSourceType.EXPERIENCE, ledger, "Ledger rewrite"))
-        assertThat(fresh.activeJob?.jobId).isEqualTo(firstJob)
+        assertThat(fresh.latestJob?.jobId).isEqualTo(firstJob)
         assertThat(jobs.findById(firstJob).orElseThrow().resultPayload).isEqualTo(mapper.valueToTree(fresh.result))
 
         insertExperience("Kafka pipeline")
@@ -363,7 +363,7 @@ class SuggestionsIntegrationTests {
             suggestions = SuggestionsService(jdbc, local, submissions, guard, jobs, mapper, transactions, persistence)
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
             targetJobs = TargetJobService(jdbc, local, jobDescriptions)
             experiences = ExperienceService(jdbc, ContentHasher(), submissions)

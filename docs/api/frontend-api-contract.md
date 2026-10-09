@@ -41,7 +41,8 @@ Status meanings:
 
 ### 1.1 Shared shapes
 
-**`ActiveJob`**: the latest background job for a resource. It is `null` when no job has run. It is not cleared
+**`LatestJob`**: the newest background job for a resource, in any status. It can be `SUCCEEDED` or `FAILED`, so check
+`status` before showing progress. It is `null` only when no job was ever submitted for the resource. It is not cleared
 when the job ends, so the UI can show the last failure after a reload.
 
 ```json
@@ -152,7 +153,7 @@ kept and marked stale (section 6), not deleted.
   "originalFilename": "resume.pdf",
   "status": "READY",
   "latestScore": { "overall": 72, "scoredAt": "2026-09-28T21:30:00Z", "stale": false },
-  "activeJob": null,
+  "latestJob": null,
   "createdAt": "2026-09-28T21:28:00Z",
   "updatedAt": "2026-09-28T21:30:00Z"
 }
@@ -166,7 +167,7 @@ kept and marked stale (section 6), not deleted.
 | `originalFilename` | string or null | Null for pasted text. |
 | `status` | `PROCESSING` \| `READY` \| `FAILED` | `PROCESSING` while `RESUME_EXTRACTION` runs. Pasted resumes start `READY`. |
 | `latestScore` | object or null | `stale` is true when `jobTitle` changed after that score. |
-| `activeJob` | `ActiveJob` or null | The latest `RESUME_EXTRACTION` or `RESUME_SCORE` job. |
+| `latestJob` | `LatestJob` or null | The latest `RESUME_EXTRACTION` or `RESUME_SCORE` job. |
 
 **`ResumeDetail`** = `Resume` plus:
 
@@ -190,7 +191,7 @@ Multipart form:
 | `jobTitle` | no | ≤100 chars. |
 
 - **Today:** returns `202` with `JobAccepted` and has no `name` or `jobTitle`.
-- **New:** returns `202` with `ResumeCreated`. `resume.status` is `PROCESSING` and `resume.activeJob` is the
+- **New:** returns `202` with `ResumeCreated`. `resume.status` is `PROCESSING` and `resume.latestJob` is the
   `RESUME_EXTRACTION` job.
 - If the file bytes match a saved resume, returns `200` with `duplicate: true` and starts no job.
 - If the extracted text matches a different saved resume, the extraction job still ends `SUCCEEDED`. Its result
@@ -404,7 +405,7 @@ the page can render "not run yet". Either ID missing returns `404 RESUME_NOT_FOU
   "targetJobId": "…",
   "result": null,
   "createdAt": null,
-  "activeJob": null
+  "latestJob": null
 }
 ```
 
@@ -420,7 +421,7 @@ When a fit has succeeded, `result` is a `JobFitResult` (section 8.2).
   "stale": false,
   "result": null,
   "createdAt": null,
-  "activeJob": null
+  "latestJob": null
 }
 ```
 
@@ -468,7 +469,7 @@ Body: `{}`. Starts `EXPERIENCE_SUGGESTIONS` and returns `202` with `JobAccepted`
   "mode": "PRACTICE",
   "status": "GENERATING",
   "questions": [],
-  "activeJob": { "jobId": "…", "jobType": "PRACTICE_QUESTIONS", "status": "PROCESSING", "stage": "GENERATING_QUESTIONS", "attempts": 1, "maxAttempts": 3, "error": null },
+  "latestJob": { "jobId": "…", "jobType": "PRACTICE_QUESTIONS", "status": "PROCESSING", "stage": "GENERATING_QUESTIONS", "attempts": 1, "maxAttempts": 3, "error": null },
   "createdAt": "…",
   "updatedAt": "…"
 }
@@ -512,7 +513,7 @@ Body: `{}`. Starts `EXPERIENCE_SUGGESTIONS` and returns `202` with `JobAccepted`
   "status": "SCORED",
   "feedback": null,
   "scoreDelta": 12,
-  "activeJob": null,
+  "latestJob": null,
   "createdAt": "…"
 }
 ```
@@ -522,7 +523,7 @@ Body: `{}`. Starts `EXPERIENCE_SUGGESTIONS` and returns `202` with `JobAccepted`
 | `status` | `PENDING` \| `SCORED` \| `FAILED`. |
 | `feedback` | `AnswerFeedbackResult` (section 8.2). Null unless `SCORED`. |
 | `scoreDelta` | This score minus the previous `SCORED` attempt's score. Null for the first scored attempt or when not scored. |
-| `activeJob` | The `ANSWER_FEEDBACK` job. On failure its `error` holds the reason; the attempt text is kept for retry (R17). |
+| `latestJob` | The `ANSWER_FEEDBACK` job. On failure its `error` holds the reason; the attempt text is kept for retry (R17). |
 
 ### 7.1 `POST /api/practice-sets` — new
 
@@ -530,7 +531,7 @@ Body: `{ "resumeId": "…", "targetJobId": "…", "mode": "PRACTICE" }`.
 
 - Returns the pair's set right away (R14):
   - `201` when it is new, with `status: "GENERATING"`, empty `questions` and the `PRACTICE_QUESTIONS` job as
-    `activeJob`.
+    `latestJob`.
   - `200` when the set already exists.
 - The AI chooses between 3 and 8 questions from the job description (R15).
 - Errors:
@@ -564,7 +565,7 @@ Errors:
 Body: `{ "text": string }`, 1–4,000 chars after trimming.
 
 - Creates the next numbered attempt with `status: "PENDING"` and starts `ANSWER_FEEDBACK`.
-- Returns `201` with `Attempt`, whose `activeJob` is set.
+- Returns `201` with `Attempt`, whose `latestJob` is set.
 - Several questions may have pending attempts at once (R18).
 - Errors:
   - `400 ANSWER_EMPTY`.
@@ -826,8 +827,8 @@ The frontend assumes each of these. The backend plan must implement and test the
    - No empty answer and no answer identical to the latest attempt.
    - Failed attempts keep their text.
    - `scoreDelta` compares against the previous `SCORED` attempt.
-10. **Active jobs.** Every resource that owns jobs returns its latest job as `activeJob`, so the UI can resume
-    polling after a reload.
+10. **Latest jobs.** Every resource that owns jobs returns its newest job, in any status, as `latestJob`, so the UI
+    can resume polling after a reload.
 11. **One practice set per pair**, created by 7.1 and never regenerated once `READY`.
 
 ## 12. Removed endpoints

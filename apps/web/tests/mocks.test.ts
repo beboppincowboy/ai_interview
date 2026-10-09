@@ -38,7 +38,7 @@ describe("mock API", () => {
     expect(upload).toMatchObject({ status: 202, body: { duplicate: false, resume: { status: "PROCESSING" } } });
 
     finishJobs();
-    const job = await get<JobStatusResponse<ResumeExtractionResult>>(`/api/jobs/${upload.body.resume.activeJob!.jobId}`);
+    const job = await get<JobStatusResponse<ResumeExtractionResult>>(`/api/jobs/${upload.body.resume.latestJob!.jobId}`);
     expect(job.status).toBe("SUCCEEDED");
     expect(job.result?.duplicateOf).toEqual({ id: saved.id, name: "Pasted" });
     expect(await errorOf(get(`/api/resumes/${upload.body.resume.id}`))).toMatchObject({ status: 404, code: "RESUME_NOT_FOUND" });
@@ -105,7 +105,7 @@ describe("mock API", () => {
     const reloaded = createMockStore({ ...timing, storage: local });
     const detail: ResumeDetail = reloaded.getResume(body.resume.id);
     expect(detail.score).not.toBeNull();
-    expect(detail.activeJob?.jobId).toBe(scored.jobId);
+    expect(detail.latestJob?.jobId).toBe(scored.jobId);
     expect(reloaded.getJob(pending.jobId).status).toBe("QUEUED");
     finishJobs();
     expect(reloaded.getJob(pending.jobId).status).toBe("SUCCEEDED");

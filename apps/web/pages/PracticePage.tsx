@@ -23,7 +23,7 @@ export default function PracticePage() {
   const set = usePracticeSet(setId);
   const targetJob = useTargetJob(set.data?.targetJobId);
   const retry = useRetryPracticeSet(setId);
-  const generation = useFollowJob(set.data?.activeJob, [practiceKeys.set(setId)]);
+  const generation = useFollowJob(set.data?.latestJob, [practiceKeys.set(setId)]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   if (isNotFound(set.error)) return <DeletedState what="practice set" />;
@@ -31,7 +31,7 @@ export default function PracticePage() {
   const questions = data?.questions ?? [];
   const selected = questions.find((question) => question.id === selectedId) ?? questions[0];
   const pendingAttempts = questions.flatMap((question) =>
-    question.attempts.filter((attempt) => attempt.status === "PENDING" && attempt.activeJob));
+    question.attempts.filter((attempt) => attempt.status === "PENDING" && attempt.latestJob));
 
   return (
     <>
@@ -47,7 +47,7 @@ export default function PracticePage() {
           />
         ) : undefined}
       />
-      {pendingAttempts.map((attempt) => <AttemptWatcher key={attempt.id} setId={setId} job={attempt.activeJob!} />)}
+      {pendingAttempts.map((attempt) => <AttemptWatcher key={attempt.id} setId={setId} job={attempt.latestJob!} />)}
       {set.isPending ? <ListSkeleton rows={4} /> : null}
       {set.isError && !isNotFound(set.error) ? <ErrorState error={set.error} onRetry={() => set.refetch()} /> : null}
       {data && data.status !== "READY" ? (

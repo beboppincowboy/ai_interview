@@ -1,6 +1,6 @@
 package dev.jiaming.ai_interview.practice
 
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import java.time.Instant
 import java.util.UUID
 
@@ -12,7 +12,8 @@ data class PracticeSetView(
     val mode: String,
     val status: PracticeSetStatus,
     val questions: List<PracticeQuestionView>,
-    val activeJob: ActiveJob?,
+    /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
+    val latestJob: LatestJob?,
     val createdAt: Instant,
     val updatedAt: Instant,
 )
@@ -39,7 +40,8 @@ data class AttemptView(
     val status: AttemptStatus,
     val feedback: AnswerFeedbackResult?,
     val scoreDelta: Int?,
-    val activeJob: ActiveJob?,
+    /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
+    val latestJob: LatestJob?,
     val createdAt: Instant,
 )
 

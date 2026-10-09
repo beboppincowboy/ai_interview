@@ -103,7 +103,7 @@ class VoiceReportIntegrationTests {
         val library = ResumeLibraryService(
             jdbc, local, Mockito.mock(ResumePersistenceService::class.java), ResumeTextNormalizer(),
             Mockito.mock(RedisRequestGuard::class.java), deletionTransactions,
-            Mockito.mock(ResumeStorageCleanupService::class.java), Mockito.mock(DeleteImpactService::class.java), mapper,
+            Mockito.mock(ResumeStorageCleanupService::class.java), Mockito.mock(DeleteImpactService::class.java), mapper, BackgroundJobStore(jdbc, mapper)
         )
         val executor = Executors.newFixedThreadPool(2)
         try {

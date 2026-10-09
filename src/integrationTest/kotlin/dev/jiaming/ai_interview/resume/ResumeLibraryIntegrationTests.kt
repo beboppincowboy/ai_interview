@@ -141,8 +141,8 @@ class ResumeLibraryIntegrationTests {
 
         val resume = library.list().items.single()
         assertThat(resume.status).isEqualTo("PROCESSING")
-        assertThat(resume.activeJob?.jobId).isEqualTo(jobId)
-        assertThat(resume.activeJob?.maxAttempts).isEqualTo(4)
+        assertThat(resume.latestJob?.jobId).isEqualTo(jobId)
+        assertThat(resume.latestJob?.maxAttempts).isEqualTo(4)
     }
 
     @Test
@@ -263,7 +263,7 @@ class ResumeLibraryIntegrationTests {
             )
             val guard = RedisRequestGuard(StringRedisTemplate(), properties, ObjectMapper().findAndRegisterModules())
             library = ResumeLibraryService(
-                jdbc, local, persistence, normalizer, guard, transactions, cleanup, DeleteImpactService(jdbc), ObjectMapper().findAndRegisterModules()
+                jdbc, local, persistence, normalizer, guard, transactions, cleanup, DeleteImpactService(jdbc), ObjectMapper().findAndRegisterModules(), BackgroundJobStore(jdbc, ObjectMapper().findAndRegisterModules())
             )
             val mapper = ObjectMapper().findAndRegisterModules()
             jobs = BackgroundJobStore(jdbc, mapper)

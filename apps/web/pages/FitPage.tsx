@@ -21,8 +21,8 @@ export default function FitPage() {
   const targetJob = useTargetJob(jobId);
   const fit = useFit(resumeId, jobId);
   const run = useRunFit(resumeId, jobId);
-  const { job, timedOut, checkAgain } = useFollowJob(fit.data?.activeJob, [scoringKeys.fit(resumeId, jobId)]);
-  useAutoStart(Boolean(fit.data && !fit.data.result && !fit.data.activeJob), `${resumeId}:${jobId}`, () => run.mutate());
+  const { job, timedOut, checkAgain } = useFollowJob(fit.data?.latestJob, [scoringKeys.fit(resumeId, jobId)]);
+  useAutoStart(Boolean(fit.data && !fit.data.result && !fit.data.latestJob), `${resumeId}:${jobId}`, () => run.mutate());
 
   if (isNotFound(resume.error)) return <DeletedState what="resume" />;
   if (isNotFound(targetJob.error) || isNotFound(fit.error)) return <DeletedState what="target job" />;

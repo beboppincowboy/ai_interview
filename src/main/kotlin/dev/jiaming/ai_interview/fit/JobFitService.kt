@@ -5,7 +5,7 @@ import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobAcceptedResponse
 import dev.jiaming.ai_interview.jobs.JobFitPayload
@@ -33,11 +33,11 @@ class JobFitService(
         val userId = localUserService.localUserId()
         requireOwnedInputs(userId, resumeId, targetJobId, lockRows = false, requireReady = false)
         val row = findFit(userId, resumeId, targetJobId).firstOrNull()
-        val activeJob = row?.id?.let { fitId ->
+        val latestJob = row?.id?.let { fitId ->
             backgroundJobStore.findLatestForResource(userId, FIT_RESOURCE, fitId, listOf(JobType.JOB_FIT))
-                .map(ActiveJob::from).orElse(null)
+                .map(LatestJob::from).orElse(null)
         }
-        return FitView(resumeId, targetJobId, row?.resultPayload?.let { objectMapper.readValue(it, JobFitResult::class.java) }, row?.resultCreatedAt, activeJob)
+        return FitView(resumeId, targetJobId, row?.resultPayload?.let { objectMapper.readValue(it, JobFitResult::class.java) }, row?.resultCreatedAt, latestJob)
     }
 
     fun run(resumeId: UUID, targetJobId: UUID): JobAcceptedResponse {

@@ -584,7 +584,7 @@ class VoiceSessionIntegrationTests {
             val normalizer = ResumeTextNormalizer()
             library = ResumeLibraryService(
                 jdbc, local, ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher()), normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
             targetJobs = TargetJobService(jdbc, local, JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
         }

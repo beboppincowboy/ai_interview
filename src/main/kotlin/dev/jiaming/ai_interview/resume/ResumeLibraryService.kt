@@ -8,11 +8,9 @@ import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RequestValidation
 import dev.jiaming.ai_interview.common.lockOwnerExclusive
-import dev.jiaming.ai_interview.jobs.ActiveJob
-import dev.jiaming.ai_interview.jobs.JobErrorResponse
-import dev.jiaming.ai_interview.jobs.JobStage
-import dev.jiaming.ai_interview.jobs.JobStatus
+import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobType
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.score.ResumeScoreResult
 import dev.jiaming.ai_interview.score.ResumeScoreSummary
 import java.sql.ResultSet
@@ -34,14 +32,17 @@ class ResumeLibraryService(
     private val transactionOperations: TransactionOperations,
     private val storageCleanupService: ResumeStorageCleanupService,
     private val deleteImpactService: DeleteImpactService,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val backgroundJobStore: BackgroundJobStore
 ) {
     fun list(): ResumePage {
         val userId = localUserService.localUserId()
-        return ResumePage(jdbcTemplate.query(
+        val items = jdbcTemplate.query(
             "$RESUME_SELECT WHERE r.user_id = ? ORDER BY r.created_at DESC, r.id DESC",
             RowMapper { rs, _ -> toItem(rs) }, userId
-        ))
+        )
+        val jobs = backgroundJobStore.findLatestForResources(userId, RESOURCE, items.map { UUID.fromString(it.id) }, LIBRARY_JOB_TYPES)
+        return ResumePage(items.map { it.copy(latestJob = jobs[UUID.fromString(it.id)]?.let(LatestJob::from)) })
     }
 
     fun get(resumeId: UUID): ResumeLibraryDetail {
@@ -49,7 +50,7 @@ class ResumeLibraryService(
         return jdbcTemplate.query(
             "$RESUME_SELECT WHERE r.user_id = ? AND r.id = ?",
             RowMapper { rs, _ -> toDetail(rs) }, userId, resumeId
-        ).firstOrNull() ?: notFound()
+        ).firstOrNull()?.copy(latestJob = latestJob(userId, resumeId)) ?: notFound()
     }
 
     fun findByFileHash(fileHash: String): ResumeLibraryItem? {
@@ -57,7 +58,7 @@ class ResumeLibraryService(
         return jdbcTemplate.query(
             "$RESUME_SELECT WHERE r.user_id = ? AND r.file_hash = ? ORDER BY r.created_at DESC LIMIT 1",
             RowMapper { rs, _ -> toItem(rs) }, userId, fileHash
-        ).firstOrNull()
+        ).firstOrNull()?.run { copy(latestJob = latestJob(userId, UUID.fromString(id))) }
     }
 
     fun paste(request: PasteResumeRequest): ResponseEntity<ResumeCreated> {
@@ -168,12 +169,12 @@ class ResumeLibraryService(
         )
     }
 
+    // latestJob is filled in by the caller from the job store.
     private fun toItem(rs: ResultSet): ResumeLibraryItem {
-        val job = activeJob(rs)
         return ResumeLibraryItem(
             rs.getObject("id", UUID::class.java).toString(), rs.getString("name"), rs.getString("job_title"),
             rs.getString("source"), rs.getString("original_filename"), apiStatus(rs.getString("processing_status")),
-            latestScore(rs), job, rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant()
+            latestScore(rs), null, rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant()
         )
     }
 
@@ -182,7 +183,7 @@ class ResumeLibraryService(
         val text = rs.getString("normalized_text")?.takeIf { item.status == "READY" }
         return ResumeLibraryDetail(
             item.id, item.name, item.jobTitle, item.source, item.originalFilename, item.status,
-            item.latestScore, item.activeJob, item.createdAt, item.updatedAt, text,
+            item.latestScore, item.latestJob, item.createdAt, item.updatedAt, text,
             rs.getString("score_result")?.let { objectMapper.readValue(it, ResumeScoreResult::class.java) }
         )
     }
@@ -193,19 +194,8 @@ class ResumeLibraryService(
         return ResumeScoreSummary(rs.getInt("score_overall"), scoredAt.toInstant(), rs.getString("score_job_title") != rs.getString("job_title"))
     }
 
-    // The latest extraction or score job, kept after it ends so the UI can show the last failure.
-    private fun activeJob(rs: ResultSet): ActiveJob? {
-        val id = rs.getObject("active_job_id", UUID::class.java) ?: return null
-        val status = JobStatus.valueOf(rs.getString("active_job_status"))
-        val message = rs.getString("active_job_error")
-        return ActiveJob(
-            id, JobType.valueOf(rs.getString("active_job_type")), status,
-            JobStage.valueOf(rs.getString("active_job_stage")), rs.getInt("active_job_attempts"),
-            rs.getInt("active_job_max_attempts"), message?.let {
-                JobErrorResponse(rs.getString("active_job_error_code"), it, rs.getObject("active_job_retryable") as Boolean?)
-            }
-        )
-    }
+    private fun latestJob(userId: UUID, resumeId: UUID): LatestJob? =
+        backgroundJobStore.findLatestForResource(userId, RESOURCE, resumeId, LIBRARY_JOB_TYPES).map(LatestJob::from).orElse(null)
 
     private fun apiStatus(status: String) = if (status == "PENDING") "PROCESSING" else status
 
@@ -215,23 +205,14 @@ class ResumeLibraryService(
     private data class OwnedResume(val id: UUID, val storageKey: String?)
 
     private companion object {
+        const val RESOURCE = "resume"
+        val LIBRARY_JOB_TYPES = listOf(JobType.RESUME_EXTRACTION, JobType.RESUME_SCORE)
         val RESUME_SELECT = """
             SELECT r.id, r.name, r.job_title, r.source, r.original_filename, r.processing_status,
                    r.normalized_text, r.created_at, r.updated_at,
-                   j.id AS active_job_id, j.job_type AS active_job_type, j.status AS active_job_status,
-                   j.stage AS active_job_stage, j.attempts AS active_job_attempts,
-                   j.max_attempts AS active_job_max_attempts, j.error_code AS active_job_error_code,
-                   j.last_error AS active_job_error, j.retryable AS active_job_retryable,
                    s.overall AS score_overall, s.job_title AS score_job_title, s.scored_at AS score_scored_at,
                    s.result AS score_result
             FROM ai_interview_app.resumes r
-            LEFT JOIN LATERAL (
-                SELECT id, job_type, status, stage, attempts, max_attempts, error_code, last_error, retryable
-                FROM ai_interview_app.background_jobs
-                WHERE user_id = r.user_id AND resource_type = 'resume' AND resource_id = r.id
-                  AND job_type IN ('RESUME_EXTRACTION', 'RESUME_SCORE')
-                ORDER BY created_at DESC LIMIT 1
-            ) j ON TRUE
             LEFT JOIN LATERAL (
                 SELECT overall, job_title, scored_at, result::text AS result
                 FROM ai_interview_app.resume_scores

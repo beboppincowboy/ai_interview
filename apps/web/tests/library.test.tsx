@@ -43,7 +43,7 @@ describe("resume library", () => {
   it("recovers a duplicate notice after reload and clears the stored job when dismissed", async () => {
     store.pasteResume({ name: "Backend", jobTitle: null, text: RESUME_TEXT });
     const upload = store.uploadResume({ fileName: "copy.txt", size: RESUME_TEXT.length, content: RESUME_TEXT, name: "Copy" });
-    const jobId = upload.body.resume.activeJob!.jobId;
+    const jobId = upload.body.resume.latestJob!.jobId;
     saveResumeUploadJobs([jobId]);
 
     const firstTab = renderRoute("/library/resumes");

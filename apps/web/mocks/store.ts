@@ -30,7 +30,7 @@ import type {
   UpdateResumeRequest, VoiceSession, VoiceTranscript, VoiceSaveResult
 } from "@/lib/api/types";
 import * as fixtures from "./fixtures";
-import { activeJob, jobState, type JobFailure, type MockJob } from "./jobSimulator";
+import { latestJob, jobState, type JobFailure, type MockJob } from "./jobSimulator";
 
 export const STORAGE_KEY = "ai-interview:mock-db:v1";
 
@@ -40,7 +40,7 @@ export class MockHttpError extends Error {
   }
 }
 
-type StoredResume = Omit<Resume, "latestScore" | "activeJob"> & {
+type StoredResume = Omit<Resume, "latestScore" | "latestJob"> & {
   text: string | null;
   fileHash: string | null;
   scores: ResumeScoreResult[];
@@ -49,9 +49,9 @@ type StoredResume = Omit<Resume, "latestScore" | "activeJob"> & {
 type StoredTargetJob = TargetJobDetail;
 type StoredPairResult<T> = { resumeId: string; targetJobId: string; result: T | null; createdAt: string | null; jobId: string | null };
 type StoredSuggestions = StoredPairResult<ExperienceSuggestionsResult> & { sourceIds: string[] };
-type StoredAttempt = Omit<Attempt, "activeJob" | "scoreDelta"> & { jobId: string };
+type StoredAttempt = Omit<Attempt, "latestJob" | "scoreDelta"> & { jobId: string };
 type StoredQuestion = Omit<Question, "attempts"> & { attempts: StoredAttempt[] };
-type StoredSet = Omit<PracticeSet, "activeJob" | "questions"> & { questions: StoredQuestion[]; jobId: string | null };
+type StoredSet = Omit<PracticeSet, "latestJob" | "questions"> & { questions: StoredQuestion[]; jobId: string | null };
 
 type Db = {
   resumes: Record<string, StoredResume>;
@@ -281,7 +281,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
         status: state.status,
         stage: state.stage,
         attempts: state.attempts,
-        maxAttempts: activeJob(job, now())!.maxAttempts,
+        maxAttempts: latestJob(job, now())!.maxAttempts,
         result: state.status === "SUCCEEDED" ? job.result : null,
         error: state.error,
         createdAt: iso(job.createdAt),
@@ -292,7 +292,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
     });
   }
 
-  const jobOf = (db: Db, jobId: string | null) => activeJob(jobId ? db.jobs[jobId] : undefined, now());
+  const jobOf = (db: Db, jobId: string | null) => latestJob(jobId ? db.jobs[jobId] : undefined, now());
 
   // ---- resumes (§3) ----------------------------------------------------------------------------
 
@@ -308,7 +308,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       latestScore: latest
         ? { overall: latest.overall, scoredAt: latest.scoredAt, stale: latest.jobTitle !== resume.jobTitle }
         : null,
-      activeJob: jobOf(db, resume.jobId),
+      latestJob: jobOf(db, resume.jobId),
       createdAt: resume.createdAt,
       updatedAt: resume.updatedAt
     };
@@ -520,7 +520,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       targetJobId,
       result: entry?.result ?? null,
       createdAt: entry?.createdAt ?? null,
-      activeJob: jobOf(db, entry?.jobId ?? null)
+      latestJob: jobOf(db, entry?.jobId ?? null)
     };
   });
 
@@ -546,7 +546,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       stale: Boolean(entry?.result) && entry.sourceIds.join() !== currentIds.join(),
       result,
       createdAt: entry?.createdAt ?? null,
-      activeJob: jobOf(db, entry?.jobId ?? null)
+      latestJob: jobOf(db, entry?.jobId ?? null)
     };
   });
 
@@ -569,7 +569,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       const score = attempt.status === "SCORED" ? attempt.feedback?.score ?? null : null;
       const scoreDelta = score !== null && previousScore !== null ? score - previousScore : null;
       if (score !== null) previousScore = score;
-      return { ...attempt, scoreDelta, activeJob: jobOf(db, jobId) };
+      return { ...attempt, scoreDelta, latestJob: jobOf(db, jobId) };
     });
   }
 
@@ -578,7 +578,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
 
   function publicSet(db: Db, set: StoredSet): PracticeSet {
     const { jobId, questions, ...rest } = set;
-    return { ...rest, questions: questions.map((question) => publicQuestion(db, question)), activeJob: jobOf(db, jobId) };
+    return { ...rest, questions: questions.map((question) => publicQuestion(db, question)), latestJob: jobOf(db, jobId) };
   }
 
   function requireSet(db: Db, id: string) {

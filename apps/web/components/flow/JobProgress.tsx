@@ -1,11 +1,11 @@
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABELS } from "@/lib/api/jobLabels";
-import type { ActiveJob } from "@/lib/api/types";
+import type { LatestJob } from "@/lib/api/types";
 import { friendlyError } from "@/lib/errorMessages";
 
 type Props = {
-  job: ActiveJob | null;
+  job: LatestJob | null;
   timedOut?: boolean;
   onCheckAgain?: () => void;
   onRetry?: () => void;

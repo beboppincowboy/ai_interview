@@ -86,8 +86,8 @@ class LegacyFlowRemovalIntegrationTests {
         assertThat(attempts.first().feedback!!.score).isEqualTo(74)
         val retried = practice.retryAttempt(failedAttempt)
         assertThat(retried.status).isEqualTo(AttemptStatus.PENDING)
-        assertThat(retried.activeJob!!.jobId).isNotEqualTo(failedJob)
-        assertThat(retried.activeJob!!.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(retried.latestJob!!.jobId).isNotEqualTo(failedJob)
+        assertThat(retried.latestJob!!.status).isEqualTo(JobStatus.QUEUED)
         assertThatThrownBy { practice.retryAttempt(scoredAttempt) }
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("ATTEMPT_NOT_FAILED") }
     }

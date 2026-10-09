@@ -80,9 +80,9 @@ class AttemptIntegrationTests {
         assertThat(attempt.status).isEqualTo(AttemptStatus.PENDING)
         assertThat(attempt.feedback).isNull()
         assertThat(attempt.scoreDelta).isNull()
-        assertThat(attempt.activeJob!!.jobType).isEqualTo(JobType.ANSWER_FEEDBACK)
-        assertThat(attempt.activeJob!!.status).isEqualTo(JobStatus.QUEUED)
-        val job = jobs.findById(attempt.activeJob!!.jobId).orElseThrow()
+        assertThat(attempt.latestJob!!.jobType).isEqualTo(JobType.ANSWER_FEEDBACK)
+        assertThat(attempt.latestJob!!.status).isEqualTo(JobStatus.QUEUED)
+        val job = jobs.findById(attempt.latestJob!!.jobId).orElseThrow()
         assertThat(job.resourceType).isEqualTo("attempt")
         assertThat(job.resourceId).isEqualTo(attempt.id)
         assertThat(JobInputRefs.from(job)).isEqualTo(JobInputRefs(set.resumeId, set.targetJobId, set.id, attempt.id))
@@ -100,8 +100,8 @@ class AttemptIntegrationTests {
         assertThat(attempts.map { it.status }).containsOnly(AttemptStatus.SCORED)
         assertThat(attempts.map { it.feedback!!.score }).containsExactly(62, 74)
         assertThat(attempts.map { it.scoreDelta }).containsExactly(null, 12)
-        assertThat(attempts.first().activeJob!!.status).isEqualTo(JobStatus.SUCCEEDED)
-        val result = jobs.findById(second.activeJob!!.jobId).orElseThrow().resultPayload!!
+        assertThat(attempts.first().latestJob!!.status).isEqualTo(JobStatus.SUCCEEDED)
+        val result = jobs.findById(second.latestJob!!.jobId).orElseThrow().resultPayload!!
         assertThat(mapper.treeToValue(result, AnswerFeedbackResult::class.java)).isEqualTo(attempts.last().feedback)
         assertThat(jdbc.queryForList("SELECT score FROM ai_interview_app.answer_attempts ORDER BY number", Int::class.java)).containsExactly(62, 74)
     }
@@ -122,7 +122,7 @@ class AttemptIntegrationTests {
         assertThat(attempts.map { it.scoreDelta }).containsExactly(null, null, 8)
         assertThat(attempts[1].feedback).isNull()
         assertThat(attempts[1].text).isEqualTo("Second answer")
-        assertThat(attempts[1].activeJob!!.error!!.code).isEqualTo("GEMINI_INVALID_RESPONSE")
+        assertThat(attempts[1].latestJob!!.error!!.code).isEqualTo("GEMINI_INVALID_RESPONSE")
     }
 
     @Test
@@ -163,10 +163,10 @@ class AttemptIntegrationTests {
         val one = submit(set.id, first.id, "The same answer").body!!
         val two = submit(set.id, second.id, "The same answer").body!!
 
-        assertThat(one.activeJob!!.jobId).isNotEqualTo(two.activeJob!!.jobId)
+        assertThat(one.latestJob!!.jobId).isNotEqualTo(two.latestJob!!.jobId)
         val questions = practice.get(set.id).questions
         assertThat(questions.take(2).map { it.attempts.single().status }).containsOnly(AttemptStatus.PENDING)
-        assertThat(questions.take(2).map { it.attempts.single().activeJob!!.status }).containsOnly(JobStatus.QUEUED)
+        assertThat(questions.take(2).map { it.attempts.single().latestJob!!.status }).containsOnly(JobStatus.QUEUED)
         assertThat(count("background_jobs")).isEqualTo(2)
         Mockito.verify(guard, Mockito.times(2)).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
     }
@@ -189,8 +189,8 @@ class AttemptIntegrationTests {
         assertThat(body.number).isEqualTo(2)
         assertThat(body.text).isEqualTo("The answer to retry")
         assertThat(body.status).isEqualTo(AttemptStatus.PENDING)
-        assertThat(body.activeJob!!.jobId).isNotEqualTo(attempt.activeJob!!.jobId)
-        assertThat(body.activeJob!!.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(body.latestJob!!.jobId).isNotEqualTo(attempt.latestJob!!.jobId)
+        assertThat(body.latestJob!!.status).isEqualTo(JobStatus.QUEUED)
         Mockito.verify(guard).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
         expectCode("ATTEMPT_NOT_FAILED") { retry(attempt.id) }
 
@@ -454,7 +454,7 @@ class AttemptIntegrationTests {
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
             targetJobs = TargetJobService(jdbc, local, JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
             materialization = JobEffectMaterializationService(jdbc, mapper)
