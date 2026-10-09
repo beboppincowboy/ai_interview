@@ -65,7 +65,7 @@ export default function HistoryPage() {
           <Section title="Job fit">
             {data.targetJobs.flatMap((job) => job.fits.map((fit) => (
               <li key={`${job.id}:${fit.resumeId}`}>
-                <Link to="/flow/$resumeId/jobs/$jobId" params={{ resumeId: fit.resumeId, jobId: job.id }} className={rowClass}>
+                <Link to="/flow/$resumeId/jobs/$targetJobId" params={{ resumeId: fit.resumeId, targetJobId: job.id }} className={rowClass}>
                   <span className="min-w-0 flex-1 truncate"><span className="font-medium">{job.name}</span> <span className="text-muted-foreground">with {fit.resumeName}</span></span>
                   <span className="font-semibold">{fit.fitScore}</span>
                 </Link>

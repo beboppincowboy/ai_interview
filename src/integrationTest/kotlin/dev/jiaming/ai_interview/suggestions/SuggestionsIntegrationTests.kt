@@ -18,7 +18,7 @@ import dev.jiaming.ai_interview.common.RuntimeModeProperties
 import dev.jiaming.ai_interview.document.DocumentReferenceResolver
 import dev.jiaming.ai_interview.document.ResolvedDocument
 import dev.jiaming.ai_interview.experience.ExperienceService
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobDispatcher
 import dev.jiaming.ai_interview.jobs.JobEffectMaterializationService
@@ -354,8 +354,8 @@ class SuggestionsIntegrationTests {
             ), mapper)
             val normalizer = ResumeTextNormalizer()
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())
-            val jobDescriptions = JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher())
-            val resolver = DocumentReferenceResolver(persistence, jobDescriptions)
+            val targetJobDocuments = TargetJobPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher())
+            val resolver = DocumentReferenceResolver(persistence, targetJobDocuments)
             val submissions = JobSubmissionService(
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
@@ -365,7 +365,7 @@ class SuggestionsIntegrationTests {
                 jdbc, local, persistence, normalizer, guard, transactions,
                 ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
-            targetJobs = TargetJobService(jdbc, local, jobDescriptions)
+            targetJobs = TargetJobService(jdbc, local, targetJobDocuments)
             experiences = ExperienceService(jdbc, ContentHasher(), submissions)
             val rag = CoachRagContextService(SectionAwareTextChunker(), indexing, retrieval, SimpleMeterRegistry(),
                 RagProperties(1024, 8, "gemini-embedding-001", "section-block-v3"))

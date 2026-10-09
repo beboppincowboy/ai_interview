@@ -11,7 +11,7 @@ import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
 import dev.jiaming.ai_interview.common.RuntimeModeProperties
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.jobs.AttemptFeedbackPayload
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobDispatcher
@@ -456,7 +456,7 @@ class AttemptIntegrationTests {
                 jdbc, local, persistence, normalizer, guard, transactions,
                 ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
-            targetJobs = TargetJobService(jdbc, local, JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
+            targetJobs = TargetJobService(jdbc, local, TargetJobPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
             materialization = JobEffectMaterializationService(jdbc, mapper)
         }
 

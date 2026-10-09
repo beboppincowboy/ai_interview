@@ -13,16 +13,16 @@ import { useResume, useTargetJob } from "@/lib/query/library";
 import { scoringKeys, useFit, useRunFit } from "@/lib/query/scoring";
 import { useFollowJob } from "@/lib/query/useJob";
 
-const route = getRouteApi("/flow/$resumeId/jobs/$jobId");
+const route = getRouteApi("/flow/$resumeId/jobs/$targetJobId");
 
 export default function FitPage() {
-  const { resumeId, jobId } = route.useParams();
+  const { resumeId, targetJobId } = route.useParams();
   const resume = useResume(resumeId);
-  const targetJob = useTargetJob(jobId);
-  const fit = useFit(resumeId, jobId);
-  const run = useRunFit(resumeId, jobId);
-  const { job, timedOut, checkAgain } = useFollowJob(fit.data?.latestJob, [scoringKeys.fit(resumeId, jobId)]);
-  useAutoStart(Boolean(fit.data && !fit.data.result && !fit.data.latestJob), `${resumeId}:${jobId}`, () => run.mutate());
+  const targetJob = useTargetJob(targetJobId);
+  const fit = useFit(resumeId, targetJobId);
+  const run = useRunFit(resumeId, targetJobId);
+  const { job, timedOut, checkAgain } = useFollowJob(fit.data?.latestJob, [scoringKeys.fit(resumeId, targetJobId)]);
+  useAutoStart(Boolean(fit.data && !fit.data.result && !fit.data.latestJob), `${resumeId}:${targetJobId}`, () => run.mutate());
 
   if (isNotFound(resume.error)) return <DeletedState what="resume" />;
   if (isNotFound(targetJob.error) || isNotFound(fit.error)) return <DeletedState what="target job" />;
@@ -30,7 +30,7 @@ export default function FitPage() {
 
   return (
     <>
-      <Stepper current={fitReady ? 5 : 4} resumeId={resumeId} targetJobId={jobId} />
+      <Stepper current={fitReady ? 5 : 4} resumeId={resumeId} targetJobId={targetJobId} />
       <StepHeading
         title={targetJob.data ? `Fit for ${targetJob.data.name}` : "Job fit"}
         description={resume.data ? `How ${resume.data.name} matches this job, and what to add.` : undefined}
@@ -42,8 +42,8 @@ export default function FitPage() {
           <JobProgress job={job} timedOut={timedOut} onCheckAgain={checkAgain} onRetry={() => run.mutate()} retrying={run.isPending} startError={run.error} />
           {fit.data?.result ? <FitCard fit={fit.data.result} /> : null}
         </section>
-        <SuggestionsPanel resumeId={resumeId} targetJobId={jobId} />
-        <ModeChooser resumeId={resumeId} targetJobId={jobId} fitReady={fitReady} />
+        <SuggestionsPanel resumeId={resumeId} targetJobId={targetJobId} />
+        <ModeChooser resumeId={resumeId} targetJobId={targetJobId} fitReady={fitReady} />
       </div>
     </>
   );

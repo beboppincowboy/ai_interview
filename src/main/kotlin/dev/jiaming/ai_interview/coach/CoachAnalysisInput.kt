@@ -5,17 +5,17 @@ import java.util.Optional
 
 class CoachAnalysisInput(
     private val resumeValue: ResolvedDocument,
-    jobDescriptionValue: Optional<ResolvedDocument>?
+    targetJobValue: Optional<ResolvedDocument>?
 ) {
-    private val jobDescriptionValue = jobDescriptionValue ?: Optional.empty()
+    private val targetJobValue = targetJobValue ?: Optional.empty()
     fun resume() = resumeValue
-    fun jobDescription() = jobDescriptionValue
+    fun targetJob() = targetJobValue
 
     override fun equals(other: Any?): Boolean = other is CoachAnalysisInput &&
-        resumeValue == other.resumeValue && jobDescriptionValue == other.jobDescriptionValue
+        resumeValue == other.resumeValue && targetJobValue == other.targetJobValue
 
-    override fun hashCode(): Int = listOf(resumeValue, jobDescriptionValue).hashCode()
+    override fun hashCode(): Int = listOf(resumeValue, targetJobValue).hashCode()
 
     override fun toString(): String =
-        "CoachAnalysisInput[resume=$resumeValue, jobDescription=$jobDescriptionValue]"
+        "CoachAnalysisInput[resume=$resumeValue, targetJob=$targetJobValue]"
 }

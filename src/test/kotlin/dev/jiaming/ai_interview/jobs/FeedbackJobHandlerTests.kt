@@ -32,7 +32,7 @@ class FeedbackJobHandlerTests {
 			ResolvedDocument(DocumentSourceType.RESUME, payload.resumeId, "resume-hash", "resume", emptyList()),
 			Optional.of(ResolvedDocument(DocumentSourceType.JOB_DESCRIPTION, payload.targetJobId, "jd-hash", "job", emptyList()))
 		)
-		val input = CoachFeedbackInput(documents.resume(), documents.jobDescription(), "Why Kafka?", "Depth", listOf("trade-offs"), "Because ordering.")
+		val input = CoachFeedbackInput(documents.resume(), documents.targetJob(), "Why Kafka?", "Depth", listOf("trade-offs"), "Because ordering.")
 		Mockito.`when`(practice.attemptForScoring(job.userId!!, payload.attemptId))
 			.thenReturn(AttemptScoringInput("Because ordering.", "Why Kafka?", "Depth", listOf("trade-offs")))
 		Mockito.`when`(resolver.resolveStrict(job.userId!!, payload.resumeId, payload.targetJobId)).thenReturn(documents)

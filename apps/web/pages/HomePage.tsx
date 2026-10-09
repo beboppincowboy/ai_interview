@@ -24,7 +24,7 @@ function ContinueCard() {
       <CardContent>
         <Button asChild>
           {job ? (
-            <Link to="/flow/$resumeId/jobs/$jobId" params={{ resumeId: resume.id, jobId: job.id }}>Continue <ArrowRight /></Link>
+            <Link to="/flow/$resumeId/jobs/$targetJobId" params={{ resumeId: resume.id, targetJobId: job.id }}>Continue <ArrowRight /></Link>
           ) : (
             <Link to="/flow/$resumeId" params={{ resumeId: resume.id }}>Continue <ArrowRight /></Link>
           )}

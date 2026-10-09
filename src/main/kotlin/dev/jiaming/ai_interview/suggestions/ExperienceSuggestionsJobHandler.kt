@@ -23,13 +23,13 @@ class ExperienceSuggestionsJobHandler(
         if (run == null) {
             context.stage(JobStage.RETRIEVING_EXPERIENCE)
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
-            val jobDescription = documents.jobDescription().orElseThrow {
+            val targetJob = documents.targetJob().orElseThrow {
                 IllegalStateException("Experience suggestions ${payload.suggestionsId} have no target job description")
             }
             val sources = suggestionsService.promptSources(context.userId(), payload.resumeId)
             context.stage(JobStage.MATCHING_EXPERIENCE)
             val result = if (sources.isEmpty()) ExperienceSuggestionsResult(emptyList())
-                else coachService.suggestExperiences(documents.resume(), jobDescription, sources)
+                else coachService.suggestExperiences(documents.resume(), targetJob, sources)
             run = ExperienceSuggestionsRun(result, sources.map { it.source.id }.sortedBy { it.toString() })
             context.saveRootCheckpoint(run, "experience-suggestions")
         }
