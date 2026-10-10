@@ -34,7 +34,7 @@ class CoachRagContextService @Autowired constructor(
     fun feedbackContext(input: CoachFeedbackInput) = ragContext(input.resume(), input.targetJob(), feedbackQueries(input),
         SelectionProfile("feedback", properties.feedbackContextBudget(), properties.feedbackJobDescriptionMinimum()))
 
-    // Suggestions send a resume whole within the direct-context budget; a longer one is narrowed to what retrieval finds for the job.
+    /** The resume text to send for suggestions: whole within DIRECT_CONTEXT_LIMIT chars, otherwise the snippets retrieval finds for [targetJob]. */
     fun suggestionSourceText(resume: ResolvedDocument, targetJob: ResolvedDocument): String =
         if (safe(resume.normalizedText()).length <= DIRECT_CONTEXT_LIMIT) resume.normalizedText()
         else ragContext(resume, Optional.empty(), suggestionQueries(targetJob),

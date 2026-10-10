@@ -15,6 +15,10 @@ class DocumentReferenceResolver(
     private val resumePersistenceService: ResumePersistenceService,
     private val targetJobPersistenceService: TargetJobPersistenceService,
 ) {
+    /**
+     * The resume must be READY. Throws ApiRequestException: RESUME_REFERENCE_REQUIRED (400) for a null [resumeId],
+     * RESUME_NOT_FOUND (404), RESUME_NOT_READY (409), TARGET_JOB_NOT_FOUND (404). A null [targetJobId] gives an empty target job.
+     */
     @Transactional(readOnly = true)
     fun resolveStrict(userId: UUID, resumeId: UUID?, targetJobId: UUID?): ResolvedJobInputs {
         if (resumeId == null) {

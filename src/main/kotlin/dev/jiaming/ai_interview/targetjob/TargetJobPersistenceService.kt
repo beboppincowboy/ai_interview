@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.Optional
 import java.util.UUID
 
+/** Stores target jobs (table `job_descriptions`) with their RAG chunks, and loads them as [ResolvedDocument]s. */
 @Service
 class TargetJobPersistenceService(
     private val jdbcTemplate: JdbcTemplate,
@@ -21,10 +22,15 @@ class TargetJobPersistenceService(
     private val chunker: SectionAwareTextChunker,
     private val contentHasher: ContentHasher,
 ) {
+    /**
+     * Saves raw [text] as a new target job unless the user already has one with the same normalized text; then the
+     * existing one is returned unchanged ([name] ignored) with `created = false`. Throws IllegalArgumentException on blank text.
+     */
     @Transactional
     fun findOrCreateTargetJob(userId: UUID, name: String, text: String): TargetJobDocumentSave =
         findOrCreate(userId, text, name)
 
+    /** The user's target job with its chunks; empty when it does not exist or belongs to another user. */
     fun findDocument(userId: UUID, targetJobId: UUID): Optional<ResolvedDocument> = queryDocument(
         """
             SELECT id, normalized_text, content_hash
@@ -35,7 +41,7 @@ class TargetJobPersistenceService(
         userId,
     )
 
-    fun findDocumentByContent(userId: UUID, contentHash: String, normalizedText: String): Optional<ResolvedDocument> =
+    private fun findDocumentByContent(userId: UUID, contentHash: String, normalizedText: String): Optional<ResolvedDocument> =
         queryDocument(
             """
                 SELECT id, normalized_text, content_hash
