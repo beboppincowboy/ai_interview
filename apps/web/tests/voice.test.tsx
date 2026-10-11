@@ -27,7 +27,7 @@ beforeEach(() => {
 async function readySet() {
   const resume = store.pasteResume({ name: "Backend", text: RESUME_TEXT }).body.resume;
   const job = store.createTargetJob({ name: "Acme", text: JOB_TEXT }).body.targetJob;
-  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body;
+  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body.practiceSet;
   await new Promise((resolve) => setTimeout(resolve, 40));
   return store.getPracticeSet(set.id);
 }

@@ -9,7 +9,7 @@ describe("routes", () => {
   it("shows the deleted state for a deleted practice set", async () => {
     const resume = store.pasteResume({ name: "Backend", jobTitle: null, text: RESUME_TEXT }).body.resume;
     const job = store.createTargetJob({ name: "Acme", text: JOB_TEXT }).body.targetJob;
-    const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body;
+    const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body.practiceSet;
     store.deleteResume(resume.id);
     renderRoute(`/practice/${set.id}`);
     expect(await screen.findByRole("heading", { name: "This practice set was deleted" })).toBeInTheDocument();

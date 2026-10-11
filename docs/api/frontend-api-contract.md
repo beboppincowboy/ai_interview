@@ -193,7 +193,8 @@ Multipart form:
 - **Today:** returns `202` with `JobAccepted` and has no `name` or `jobTitle`.
 - **New:** returns `202` with `ResumeCreated`. `resume.status` is `PROCESSING` and `resume.latestJob` is the
   `RESUME_EXTRACTION` job.
-- If the file bytes match a saved resume, returns `200` with `duplicate: true` and starts no job.
+- If the file bytes match a saved resume, returns `200` with `duplicate: true` and the saved resume, and starts no
+  job. Dedup key: the file's bytes (SHA-256). `name` and `jobTitle` of the request are ignored.
 - If the extracted text matches a different saved resume, the extraction job still ends `SUCCEEDED`. Its result
   is `{ "resumeId": "<new id>", "duplicateOf": { "id": "…", "name": "…" } }` and the new resume is removed. The UI
   then shows the duplicate notice, and `GET` of the new ID returns `404`.
@@ -213,7 +214,8 @@ Multipart form:
 - `name`: 1–80 chars, required.
 - `text`: 100–50,000 chars, required.
 - Returns `201` with `ResumeCreated` and `resume.status: "READY"`. No extraction job runs.
-- A duplicate (same normalized text) returns `200` with `duplicate: true`.
+- A duplicate returns `200` with `duplicate: true` and the saved resume. Dedup key: the normalized text. `name`
+  and `jobTitle` of the request are ignored.
 - Errors: `400 INVALID_REQUEST`.
 
 ### 3.3 `GET /api/resumes` — new
@@ -279,7 +281,8 @@ Body: `{}`. Starts a `RESUME_SCORE` job and returns `202` with `JobAccepted`.
 - `name`: 1–80 chars.
 - `text`: 100–20,000 chars.
 - Returns `201` with `TargetJobCreated`.
-- The same normalized text returns `200` with `duplicate: true` and the existing item (R4).
+- A duplicate returns `200` with `duplicate: true` and the existing item unchanged (R4). Dedup key: the
+  normalized text. The request's `name` is ignored; the UI tells the user and offers a rename.
 - Errors: `400 INVALID_REQUEST`.
 
 ### 4.2 `GET /api/target-jobs` — existing
@@ -334,7 +337,8 @@ this job, and cancels their in-flight jobs.
 
 Body: `ExperienceInput`. Returns `201` with `{ "experience": Experience, "duplicate": boolean }`.
 
-- A duplicate (same normalized title and description) returns `200` with `duplicate: true`.
+- A duplicate returns `200` with `duplicate: true` and the saved experience. Dedup key: title plus description,
+  whitespace-collapsed and case-insensitive. `organization`, `startDate` and `endDate` of the request are ignored.
 - Errors: `400 INVALID_REQUEST`.
 
 ### 5.2 `POST /api/experiences/linkedin-split` — existing
@@ -358,12 +362,12 @@ Body: `{ "items": ExperienceInput[] }`, 1–30 items, with `source` recorded as 
 ```json
 {
   "created": [ { "id": "…", "title": "…" } ],
-  "skipped": [ { "title": "…", "existingId": "…", "existingTitle": "…" } ]
+  "duplicates": [ { "title": "…", "existingId": "…", "existingTitle": "…" } ]
 }
 ```
 
-`created` holds full `Experience` objects (shortened above). Items already saved are skipped, not duplicated
-(R3). The UI shows each skipped item with a note.
+`created` holds full `Experience` objects (shortened above). `duplicates` lists the items that matched a saved
+experience: they are not stored and are not an error (R3). The UI shows each duplicate with a note.
 
 A list outside 1–30 items returns `400 INVALID_REQUEST` with a message naming `items`. Duplicate matching is
 per user and uses whitespace-collapsed, case-insensitive title and description; organization and dates do not
@@ -532,7 +536,9 @@ Body: `{ "resumeId": "…", "targetJobId": "…", "mode": "PRACTICE" }`.
 - Returns the pair's set right away (R14):
   - `201` when it is new, with `status: "GENERATING"`, empty `questions` and the `PRACTICE_QUESTIONS` job as
     `latestJob`.
-  - `200` when the set already exists.
+  - `200` when the set already exists, with `duplicate: true` and that set; no job starts.
+- Body of both: `PracticeSetCreated`, `{ "practiceSet": PracticeSet, "duplicate": boolean }`. Dedup key: the
+  `resumeId` and `targetJobId` pair. No request field is ignored.
 - The AI chooses between 3 and 8 questions from the job description (R15).
 - Errors:
   - `400 INVALID_REQUEST`: `mode` other than `PRACTICE`. Voice mode is out of scope.
@@ -800,9 +806,19 @@ The frontend assumes each of these. The backend plan must implement and test the
      is still running, which returns that running job.
 4. **Cascade delete** as described in 3.7, 4.6 and 5.7. `delete-impact` counts match what the delete removes.
 5. **Duplicate resolution.**
-   - Applies to resumes (file bytes, then normalized text), target jobs (normalized text) and experiences
-     (normalized title plus description).
-   - A duplicate returns the existing item with `duplicate: true` and creates nothing.
+   - A duplicate returns the existing item with `duplicate: true` (`200`) and writes nothing. It is not an
+     error. A batch lists its duplicate items under `duplicates` instead.
+   - Dedup is per user and decided by content, not by `Idempotency-Key`:
+
+     | Route | Dedup key | Request fields ignored on a duplicate |
+     |---|---|---|
+     | `POST /api/resumes` | File bytes (SHA-256); later the normalized text, reported by the extraction job (3.1) | `name`, `jobTitle` |
+     | `POST /api/resumes/paste` | Normalized text | `name`, `jobTitle` |
+     | `POST /api/target-jobs` | Normalized text | `name` |
+     | `POST /api/experiences` | Title plus description, whitespace-collapsed, case-insensitive | `organization`, `startDate`, `endDate` |
+     | `POST /api/experiences/batch` | Same as `POST /api/experiences`, per item | The whole item (listed in `duplicates`) |
+     | `POST /api/practice-sets` | `resumeId` plus `targetJobId` | none |
+     | `POST /api/voice-sessions/{id}/save` | The session plus its normalized transcript; a different transcript for a saved session is `409 VOICE_SESSION_ALREADY_SAVED` | none |
 6. **General score inputs.** Resume text and optional job title only. No job description and no seniority. The
    seniority input is removed from prompts.
 7. **Rewrites use placeholders** instead of invented numbers or scope.

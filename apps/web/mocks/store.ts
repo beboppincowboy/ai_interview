@@ -16,7 +16,7 @@ import type {
   JobStatusResponse,
   JobType,
   PasteResumeRequest,
-  PracticeSet,
+  PracticeSet, PracticeSetCreated,
   Question,
   Resume,
   ResumeCreated,
@@ -470,10 +470,10 @@ export function createMockStore(options: MockStoreOptions = {}) {
     if (!Array.isArray(items) || items.length < 1 || items.length > 30) {
       throw new MockHttpError(400, "INVALID_REQUEST", "items must contain 1-30 experiences");
     }
-    const result: ExperienceBatchResult = { created: [], skipped: [] };
+    const result: ExperienceBatchResult = { created: [], duplicates: [] };
     for (const item of items.map(validateExperience)) {
       const existing = findExperienceDuplicate(db, item);
-      if (existing) result.skipped.push({ title: item.title, existingId: existing.id, existingTitle: existing.title });
+      if (existing) result.duplicates.push({ title: item.title, existingId: existing.id, existingTitle: existing.title });
       else result.created.push(addExperience(db, item, "LINKEDIN"));
     }
     return result;
@@ -598,13 +598,13 @@ export function createMockStore(options: MockStoreOptions = {}) {
   }
 
   const createPracticeSet = (input: { resumeId?: unknown; targetJobId?: unknown; mode?: unknown }):
-    { status: 200 | 201; body: PracticeSet } => tx((db) => {
+    { status: 200 | 201; body: PracticeSetCreated } => tx((db) => {
     if (input.mode !== "PRACTICE") throw new MockHttpError(400, "INVALID_REQUEST", "mode must be PRACTICE");
     const resumeId = String(input.resumeId ?? "");
     const targetJobId = String(input.targetJobId ?? "");
     requirePair(db, resumeId, targetJobId);
     const existing = Object.values(db.sets).find((set) => set.resumeId === resumeId && set.targetJobId === targetJobId);
-    if (existing) return { status: 200, body: publicSet(db, existing) };
+    if (existing) return { status: 200, body: { practiceSet: publicSet(db, existing), duplicate: true } };
     requireReadyResume(db, resumeId);
     const at = iso();
     const set: StoredSet = {
@@ -613,7 +613,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
     };
     db.sets[set.id] = set;
     set.jobId = startJob(db, "PRACTICE_QUESTIONS", { resumeId, targetJobId, practiceSetId: set.id }).id;
-    return { status: 201, body: publicSet(db, set) };
+    return { status: 201, body: { practiceSet: publicSet(db, set), duplicate: false } };
   });
 
   const getPracticeSet = (id: string): PracticeSet => tx((db) => publicSet(db, requireSet(db, id)));
@@ -714,12 +714,12 @@ export function createMockStore(options: MockStoreOptions = {}) {
     if (new TextEncoder().encode(normalized).length > 64 * 1024) throw new MockHttpError(400, "TRANSCRIPT_TOO_LARGE", "The transcript is too large");
     if (session.transcript) {
       if (JSON.stringify(session.transcript) !== normalized) throw new MockHttpError(409, "VOICE_SESSION_ALREADY_SAVED", "This interview was already saved");
-      return { session, replayed: true };
+      return { session, duplicate: true };
     }
     if (session.status === "EXPIRED") throw new MockHttpError(409, "VOICE_SESSION_EXPIRED", "The interview draft expired before it was saved");
     const job = startJob(db, "VOICE_REPORT", { resumeId: session.resumeId, targetJobId: session.targetJobId, voiceSessionId: id });
     Object.assign(session, { status: "SAVED", transcript, savedAt: iso(), submissionJobId: job.id, reportJobId: job.id });
-    return { session, replayed: false };
+    return { session, duplicate: false };
   });
 
   const retryVoiceReport = (id: string) => tx((db) => {

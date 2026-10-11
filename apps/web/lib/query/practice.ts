@@ -1,17 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api/client";
-import type { Attempt, PracticeSet, Question } from "@/lib/api/types";
+import type { Attempt, PracticeSet, PracticeSetCreated, Question } from "@/lib/api/types";
 
 export const practiceKeys = {
   set: (id: string) => ["practice-set", id] as const
 };
 
-/** Creates the pair's practice set, or returns the existing one (one set per resume and job). */
+/** Creates the pair's practice set, or resolves to the existing one (one set per resume and job); both are used the same way. */
 export function useCreatePracticeSet() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (body: { resumeId: string; targetJobId: string }) =>
-      apiRequest<PracticeSet>("/api/practice-sets", { method: "POST", body: { ...body, mode: "PRACTICE" } }),
+      apiRequest<PracticeSetCreated>("/api/practice-sets", { method: "POST", body: { ...body, mode: "PRACTICE" } })
+        .then(({ practiceSet }) => practiceSet),
     onSuccess: (set) => client.setQueryData(practiceKeys.set(set.id), set)
   });
 }

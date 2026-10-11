@@ -200,7 +200,7 @@ class VoiceSessionIntegrationTests {
 
         val saved = voice.save(session.id, reviewed)
 
-        assertThat(saved.replayed).isFalse()
+        assertThat(saved.duplicate).isFalse()
         val view = saved.session
         assertThat(view.status).isEqualTo(VoiceSessionStatus.SAVED)
         assertThat(view.savedAt).isNotNull()
@@ -240,7 +240,7 @@ class VoiceSessionIntegrationTests {
         assertThat(count("background_jobs")).isZero()
 
         Mockito.reset(jobs)
-        assertThat(voice.save(session.id, reviewed).replayed).isFalse()
+        assertThat(voice.save(session.id, reviewed).duplicate).isFalse()
         assertThat(count("background_jobs")).isEqualTo(1)
     }
 
@@ -251,14 +251,14 @@ class VoiceSessionIntegrationTests {
 
         val results = concurrently(2) { voice.save(session.id, reviewed) }
 
-        assertThat(results.map { it.replayed }).containsExactlyInAnyOrder(false, true)
+        assertThat(results.map { it.duplicate }).containsExactlyInAnyOrder(false, true)
         val jobId = results.map { it.session.submissionJobId }.distinct().single()!!
         assertThat(count("background_jobs")).isEqualTo(1)
         jdbc.update("UPDATE ai_interview_app.background_jobs SET status = 'SUCCEEDED', stage = 'COMPLETED', completed_at = now() WHERE id = ?", jobId)
 
         // Order and surrounding whitespace are normalized away, so this is the same reviewed transcript.
         val replay = voice.save(session.id, VoiceTranscript(reviewed.answers.reversed().map { it.copy(answerText = " ${it.answerText} ") }))
-        assertThat(replay.replayed).isTrue()
+        assertThat(replay.duplicate).isTrue()
         assertThat(replay.session.submissionJobId).isEqualTo(jobId)
         assertThat(replay.session.transcript).isEqualTo(reviewed)
         assertThat(count("background_jobs")).isEqualTo(1)
@@ -285,7 +285,7 @@ class VoiceSessionIntegrationTests {
         // A committed Save outlives the draft window and still replays.
         age(late.id, Duration.ofHours(25))
         val replay = voice.save(late.id, transcript(late, "Finished after the run ended"))
-        assertThat(replay.replayed).isTrue()
+        assertThat(replay.duplicate).isTrue()
         assertThat(replay.session.status).isEqualTo(VoiceSessionStatus.SAVED)
     }
 
@@ -342,7 +342,7 @@ class VoiceSessionIntegrationTests {
 
         val (save, discard) = raceWithPausedSave(session.id, transcript(session, "Committed")) { voice.discard(session.id) }
 
-        assertThat(save.getOrThrow().replayed).isFalse()
+        assertThat(save.getOrThrow().duplicate).isFalse()
         assertThat((discard.exceptionOrNull() as ApiRequestException).code()).isEqualTo("VOICE_SESSION_ALREADY_SAVED")
         assertThat(voice.get(session.id).transcript!!.answers.single().answerText).isEqualTo("Committed")
         assertThat(count("background_jobs")).isEqualTo(1)

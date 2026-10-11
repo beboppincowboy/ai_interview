@@ -31,8 +31,9 @@ data class Experience(
 
 data class ExperienceListResponse(val items: List<Experience>)
 data class ExperienceCreatedResponse(val experience: Experience, val duplicate: Boolean)
-data class ExperienceSkipped(val title: String, val existingId: UUID, val existingTitle: String)
-data class ExperienceBatchResult(val created: List<Experience>, val skipped: List<ExperienceSkipped>)
+/** A batch item that matched a saved experience ([existingId]) and was not stored. */
+data class ExperienceBatchDuplicate(val title: String, val existingId: UUID, val existingTitle: String)
+data class ExperienceBatchResult(val created: List<Experience>, val duplicates: List<ExperienceBatchDuplicate>)
 
 data class ExperienceSplitJobPayload(
     val payloadVersion: Int = CURRENT_VERSION,

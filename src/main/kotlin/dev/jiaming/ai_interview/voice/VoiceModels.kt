@@ -33,8 +33,8 @@ data class VoiceTranscript(val answers: List<VoiceAnswer>)
 /** What the interviewer said for [questionId] and the candidate's corrected answer; [incomplete] marks a cut-off capture. */
 data class VoiceAnswer(val questionId: UUID, val interviewerText: String, val answerText: String, val incomplete: Boolean)
 
-/** [replayed] is true when an identical Save was already committed and this call returned it. */
-data class VoiceSaveResult(val session: VoiceSessionView, val replayed: Boolean)
+/** [duplicate] is true when the same transcript was already saved: [session] is that save and no new report job started. */
+data class VoiceSaveResult(val session: VoiceSessionView, val duplicate: Boolean)
 
 /** Canonical question and run deadline reserved before contacting Gemini; each attempt consumes one DB slot. */
 data class VoiceTokenReservation(val question: VoiceQuestion, val runDeadline: Instant)

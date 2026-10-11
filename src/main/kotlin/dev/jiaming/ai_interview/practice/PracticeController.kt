@@ -19,13 +19,13 @@ class PracticeController(
     private val requestGuard: RedisRequestGuard,
 ) {
     @PostMapping
-    fun create(@RequestBody request: CreatePracticeSetRequest): ResponseEntity<PracticeSetView> {
+    fun create(@RequestBody request: CreatePracticeSetRequest): ResponseEntity<PracticeSetCreated> {
         if (request.mode != "PRACTICE") throw RequestValidation.invalid("mode must be PRACTICE")
         val resumeId = request.resumeId ?: throw RequestValidation.invalid("resumeId is required")
         val targetJobId = request.targetJobId ?: throw RequestValidation.invalid("targetJobId is required")
-        return requestGuard.withIdempotentHttpCache("practice-set-create", listOf(resumeId, targetJobId), PracticeSetView::class.java) {
+        return requestGuard.withIdempotentHttpCache("practice-set-create", listOf(resumeId, targetJobId), PracticeSetCreated::class.java) {
             val creation = practiceService.create(resumeId, targetJobId)
-            ResponseEntity.status(if (creation.created) HttpStatus.CREATED else HttpStatus.OK).body(creation.set)
+            ResponseEntity.status(if (creation.duplicate) HttpStatus.OK else HttpStatus.CREATED).body(creation)
         }
     }
 

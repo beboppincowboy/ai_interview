@@ -35,7 +35,7 @@ class PracticeService(
     }
 
     /** Returns the pair's set, creating it with its first generation job when it does not exist yet (§7.1). */
-    fun create(resumeId: UUID, targetJobId: UUID): PracticeSetCreation {
+    fun create(resumeId: UUID, targetJobId: UUID): PracticeSetCreated {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
         return inTransaction {
@@ -43,7 +43,7 @@ class PracticeService(
             val resumeReady = lockInputs(userId, resumeId, targetJobId)
             val existing = findPairSet(userId, resumeId, targetJobId)
             when {
-                existing != null -> PracticeSetCreation(view(userId, existing), false)
+                existing != null -> PracticeSetCreated(view(userId, existing), duplicate = true)
                 !resumeReady -> throw ApiRequestException(HttpStatus.CONFLICT, "RESUME_NOT_READY", "Resume is not ready for practice")
                 else -> {
                     // The unique pair constraint picks one winner among concurrent creates; the loser returns the winner's set.
@@ -57,11 +57,11 @@ class PracticeService(
                         RowMapper { rs, _ -> rs.getObject("id", UUID::class.java) }, userId, resumeId, targetJobId,
                     ).firstOrNull()
                     if (setId == null) {
-                        PracticeSetCreation(view(userId, findPairSet(userId, resumeId, targetJobId) ?: notFound()), false)
+                        PracticeSetCreated(view(userId, findPairSet(userId, resumeId, targetJobId) ?: notFound()), duplicate = true)
                     } else {
                         val set = findSet(userId, "id = ?", setId) ?: notFound()
                         startGeneration(set)
-                        PracticeSetCreation(view(userId, set), true)
+                        PracticeSetCreated(view(userId, set), duplicate = false)
                     }
                 }
             }

@@ -6,8 +6,8 @@ import { afterAll, expect, it } from "vitest";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import committedShapes from "./apiShapes.json";
 import type {
-  Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, Resume, ResumeCreated, SuggestionsView,
-  TargetJobCreated, VoiceSession, VoiceSaveResult, VoiceTranscript
+  Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, PracticeSetCreated, Resume, ResumeCreated,
+  SuggestionsView, TargetJobCreated, VoiceSession, VoiceSaveResult, VoiceTranscript
 } from "@/lib/api/types";
 
 export type ApiTarget = {
@@ -203,8 +203,9 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     created.targetJobs.add(job.id);
     return job;
   };
-  const createSet = async (resumeId: string, targetJobId: string, label = "POST /api/practice-sets (new)") => record(label,
-    await post<PracticeSet>(`${base}/api/practice-sets`, { resumeId, targetJobId, mode: "PRACTICE" }));
+  const createSetResponse = async (resumeId: string, targetJobId: string, label = "POST /api/practice-sets (new)") => record(label,
+    await post<PracticeSetCreated>(`${base}/api/practice-sets`, { resumeId, targetJobId, mode: "PRACTICE" }));
+  const createSet = async (resumeId: string, targetJobId: string) => (await createSetResponse(resumeId, targetJobId)).practiceSet;
   const readSet = (id: string) => get<PracticeSet>(`${base}/api/practice-sets/${id}`);
   const readJob = async (jobId: string) => {
     const job = await get<JobStatusResponse>(`${base}/api/jobs/${jobId}`);
@@ -217,6 +218,13 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     const again = record("POST /api/resumes/paste (duplicate)",
       await post<ResumeCreated>(`${base}/api/resumes/paste`, { name: "Second", jobTitle: null, text: `  ${text}  ` }));
     expect(again).toMatchObject({ duplicate: true, resume: { id: saved.id, name: "First" } });
+  });
+
+  scenario("resolves a duplicate target job to the saved one and ignores the new name", async () => {
+    const saved = await targetJob();
+    const again = record("POST /api/target-jobs (duplicate)",
+      await post<TargetJobCreated>(`${base}/api/target-jobs`, { name: "Renamed", text: `  ${saved.text}  ` }));
+    expect(again).toMatchObject({ duplicate: true, targetJob: { id: saved.id, name: saved.name } });
   });
 
   scenario("previews and cascades a resume delete", async () => {
@@ -277,8 +285,8 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(ready.questions.length).toBeGreaterThanOrEqual(3);
     expect(ready.questions.length).toBeLessThanOrEqual(8);
     for (const question of ready.questions) expect(question.rationale).toBeTruthy();
-    const again = await createSet(resume.id, job.id, "POST /api/practice-sets (existing)");
-    expect(again.id).toBe(created.id);
+    const again = await createSetResponse(resume.id, job.id, "POST /api/practice-sets (duplicate)");
+    expect(again).toMatchObject({ duplicate: true, practiceSet: { id: created.id } });
   });
 
   scenario("scores attempts, reports the change, and rejects an unchanged answer", async () => {
@@ -339,15 +347,15 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(ids((await get<History>(`${base}/api/history`)).voiceSessions)).not.toContain(draft.id);
     const transcript: VoiceTranscript = { answers: draft.questions.map((q, index) => ({ questionId: q.id, interviewerText: q.text, answerText: index === 0 ? "I improved a Kotlin payment service by measuring slow PostgreSQL queries, adding an index, and validating the improvement under load." : "", incomplete: index === 0 })) };
     const saved = record("POST /api/voice-sessions/{id}/save", await post<VoiceSaveResult>(`${base}/api/voice-sessions/${draft.id}/save`, transcript));
-    expect(saved.replayed).toBe(false);
+    expect(saved.duplicate).toBe(false);
     await settle([saved.session.reportJobId!]);
     await readJob(saved.session.reportJobId!);
     const detail = record("GET /api/voice-sessions/{id} (completed)", await get<VoiceSession>(`${base}/api/voice-sessions/${draft.id}`));
     expect(detail.report).toMatchObject({ selectedCount: draft.questions.length, answeredCount: 1 });
     expect(detail.report!.answers[0]).toMatchObject({ questionId: draft.questions[0].id, incomplete: true });
     expect(detail.report!.unansweredQuestionIds).toHaveLength(draft.questions.length - 1);
-    const replay = record("POST /api/voice-sessions/{id}/save (replay)", await post<VoiceSaveResult>(`${base}/api/voice-sessions/${draft.id}/save`, transcript));
-    expect(replay).toMatchObject({ replayed: true, session: { submissionJobId: saved.session.submissionJobId, reportJobId: saved.session.reportJobId } });
+    const replay = record("POST /api/voice-sessions/{id}/save (duplicate)", await post<VoiceSaveResult>(`${base}/api/voice-sessions/${draft.id}/save`, transcript));
+    expect(replay).toMatchObject({ duplicate: true, session: { submissionJobId: saved.session.submissionJobId, reportJobId: saved.session.reportJobId } });
     expect((await readSet(set.id)).questions.every((q) => q.attempts.length === 0)).toBe(true);
     record("GET /api/history (voice)", ownHistory(await get<History>(`${base}/api/history`), [resume.id, job.id, set.id, draft.id]));
     const impact = await get<DeleteImpact>(`${base}/api/resumes/${resume.id}/delete-impact`);

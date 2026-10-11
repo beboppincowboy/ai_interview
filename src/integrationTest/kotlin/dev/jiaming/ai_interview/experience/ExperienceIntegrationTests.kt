@@ -107,7 +107,7 @@ class ExperienceIntegrationTests {
 		)))
 
 		assertThat(result.created).hasSize(2).allSatisfy { assertThat(it.source).isEqualTo(ExperienceSource.LINKEDIN) }
-		assertThat(result.skipped).containsExactly(ExperienceSkipped("existing   role", existing.id, existing.title))
+		assertThat(result.duplicates).containsExactly(ExperienceBatchDuplicate("existing   role", existing.id, existing.title))
 	}
 
 	@Test

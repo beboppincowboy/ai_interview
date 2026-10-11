@@ -72,7 +72,8 @@ data class PracticeQuestionDrafts(val drafts: List<PracticeQuestionDraft>)
 /** The `PRACTICE_QUESTIONS` job result (contract §8.1). */
 data class PracticeQuestionsResult(val questions: List<PracticeQuestionView>)
 
-data class PracticeSetCreation(val set: PracticeSetView, val created: Boolean)
+/** POST /api/practice-sets response. [duplicate] is true when the pair already had a set: [practiceSet] is that set and no job started. */
+data class PracticeSetCreated(val practiceSet: PracticeSetView, val duplicate: Boolean)
 
 data class CreatePracticeSetRequest(val resumeId: UUID?, val targetJobId: UUID?, val mode: String?)
 

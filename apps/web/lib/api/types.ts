@@ -150,9 +150,10 @@ export type ExperienceInput = {
 };
 export type Experience = ExperienceInput & { id: string; source: "FORM" | "LINKEDIN"; createdAt: string };
 export type ExperienceCreated = { experience: Experience; duplicate: boolean };
+/** `duplicates` are submitted items that matched a saved experience and were not stored. */
 export type ExperienceBatchResult = {
   created: Experience[];
-  skipped: { title: string; existingId: string; existingTitle: string }[];
+  duplicates: { title: string; existingId: string; existingTitle: string }[];
 };
 
 // §6 Fit and suggestions
@@ -177,6 +178,8 @@ export type SuggestionsView = {
 };
 
 // §7 Practice
+/** `duplicate` is true when the pair already had a set; `practiceSet` is that set and no job started. */
+export type PracticeSetCreated = { practiceSet: PracticeSet; duplicate: boolean };
 export type PracticeSet = {
   id: string;
   resumeId: string;
@@ -241,7 +244,8 @@ export type VoiceSession = {
   savedAt: string | null;
   report: VoiceReport | null;
 };
-export type VoiceSaveResult = { session: VoiceSession; replayed: boolean };
+/** `duplicate` is true when the same transcript was already saved; `session` is that save and no new report job started. */
+export type VoiceSaveResult = { session: VoiceSession; duplicate: boolean };
 export type VoiceToken = { token: string; model: string; apiVersion: "v1beta"; expiresAt: string; newSessionExpiresAt: string };
 
 // §8.2 Job results

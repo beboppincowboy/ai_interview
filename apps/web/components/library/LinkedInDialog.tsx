@@ -127,8 +127,8 @@ export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; tri
                   kept.map(({ duplicateOf: _duplicate, ...item }) => item),
                   {
                     onSuccess: (result) => {
-                      const skipped = result.skipped.length ? ` ${result.skipped.length} already saved.` : "";
-                      toast.success(`Saved ${result.created.length} ${result.created.length === 1 ? "item" : "items"}.${skipped}`);
+                      const duplicates = result.duplicates.length ? ` ${result.duplicates.length} already saved.` : "";
+                      toast.success(`Saved ${result.created.length} ${result.created.length === 1 ? "item" : "items"}.${duplicates}`);
                       onSaved?.();
                       discard();
                     }

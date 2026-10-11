@@ -89,7 +89,7 @@ class ExperienceService(
             throw RequestValidation.invalid("items must contain 1 to 30 experiences")
         }
         val created = mutableListOf<Experience>()
-        val skipped = mutableListOf<ExperienceSkipped>()
+        val duplicates = mutableListOf<ExperienceBatchDuplicate>()
         for (input in inputs) {
             val draft = validate(input)
             val hash = contentHash(draft.title, draft.description)
@@ -99,10 +99,10 @@ class ExperienceService(
             } else {
                 val existing = findByHash(userId, hash)
                     ?: throw IllegalStateException("Experience duplicate could not be loaded after insert conflict")
-                skipped += ExperienceSkipped(draft.title, existing.id, existing.title)
+                duplicates += ExperienceBatchDuplicate(draft.title, existing.id, existing.title)
             }
         }
-        return ExperienceBatchResult(created, skipped)
+        return ExperienceBatchResult(created, duplicates)
     }
 
     fun split(request: ExperienceSplitRequest): JobAcceptedResponse {

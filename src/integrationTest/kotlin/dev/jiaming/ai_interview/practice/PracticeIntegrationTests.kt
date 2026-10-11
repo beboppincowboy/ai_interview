@@ -69,8 +69,9 @@ class PracticeIntegrationTests {
         }
 
         assertThat(responses.map { it.statusCode.value() }).containsExactlyInAnyOrder(201, 200)
-        assertThat(responses.map { it.body!!.id }.distinct()).hasSize(1)
-        val created = responses.single { it.statusCode.value() == 201 }.body!!
+        assertThat(responses.map { it.body!!.practiceSet.id }.distinct()).hasSize(1)
+        assertThat(responses.map { it.body!!.duplicate }).containsExactlyInAnyOrder(false, true)
+        val created = responses.single { it.statusCode.value() == 201 }.body!!.practiceSet
         assertThat(created.status).isEqualTo(PracticeSetStatus.GENERATING)
         assertThat(created.questions).isEmpty()
         assertThat(created.latestJob?.status).isEqualTo(JobStatus.QUEUED)
@@ -140,7 +141,8 @@ class PracticeIntegrationTests {
 
         val again = controller.create(request(set.resumeId, set.targetJobId))
         assertThat(again.statusCode.value()).isEqualTo(200)
-        assertThat(again.body!!.id).isEqualTo(set.id)
+        assertThat(again.body!!.duplicate).isTrue()
+        assertThat(again.body!!.practiceSet.id).isEqualTo(set.id)
         assertThat(count("background_jobs")).isEqualTo(1)
         expectCode("PRACTICE_SET_NOT_FAILED") { practice.retry(set.id) }
     }
@@ -239,8 +241,8 @@ class PracticeIntegrationTests {
 
     private fun createSet(resumeId: UUID = insertResume(), targetJobId: UUID = insertTargetJob()): PracticeSetView {
         val creation = practice.create(resumeId, targetJobId)
-        assertThat(creation.created).isTrue()
-        return creation.set
+        assertThat(creation.duplicate).isFalse()
+        return creation.practiceSet
     }
 
     private fun readySet(resumeId: UUID = insertResume(), targetJobId: UUID = insertTargetJob()): PracticeSetView {

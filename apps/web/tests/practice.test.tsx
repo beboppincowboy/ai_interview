@@ -11,7 +11,7 @@ const LONG_ANSWER = "At Sample Co I owned the checkout latency work: I measured 
 function newSet() {
   const resume = store.pasteResume({ name: "Backend", jobTitle: null, text: RESUME_TEXT }).body.resume;
   const job = store.createTargetJob({ name: "Acme", text: JOB_TEXT }).body.targetJob;
-  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body;
+  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body.practiceSet;
   return set;
 }
 
