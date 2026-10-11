@@ -30,8 +30,12 @@ data class Experience(
 )
 
 data class ExperienceListResponse(val items: List<Experience>)
-data class ExperienceCreatedResponse(val experience: Experience, val duplicate: Boolean)
-/** A batch item that matched a saved experience ([existingId]) and was not stored. */
+/**
+ * [duplicate] is true when the user already has an experience with the same title and description (whitespace-collapsed,
+ * case-insensitive): [experience] is that saved one, unchanged; organization and dates of the request are ignored.
+ */
+data class ExperienceCreated(val experience: Experience, val duplicate: Boolean)
+/** A submitted batch item ([title] as submitted) that matched the saved experience [existingId] and was not stored. */
 data class ExperienceBatchDuplicate(val title: String, val existingId: UUID, val existingTitle: String)
 data class ExperienceBatchResult(val created: List<Experience>, val duplicates: List<ExperienceBatchDuplicate>)
 

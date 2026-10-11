@@ -44,8 +44,8 @@ class ExperienceController(
     }
 
     @PostMapping
-    fun create(@RequestBody input: ExperienceInput): ResponseEntity<ExperienceCreatedResponse> =
-        requestGuard.withIdempotentHttpCache("experience-create", input, ExperienceCreatedResponse::class.java) {
+    fun create(@RequestBody input: ExperienceInput): ResponseEntity<ExperienceCreated> =
+        requestGuard.withIdempotentHttpCache("experience-create", input, ExperienceCreated::class.java) {
             val response = experienceService.create(localUserService.localUserId(), input)
             ResponseEntity.status(if (response.duplicate) HttpStatus.OK else HttpStatus.CREATED).body(response)
         }

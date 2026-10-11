@@ -73,15 +73,16 @@ class ExperienceService(
     }
 
     @Transactional
-    fun create(userId: UUID, input: ExperienceInput): ExperienceCreatedResponse {
+    fun create(userId: UUID, input: ExperienceInput): ExperienceCreated {
         val draft = validate(input)
         val hash = contentHash(draft.title, draft.description)
         val inserted = insert(userId, draft, ExperienceSource.FORM, hash)
-        if (inserted != null) return ExperienceCreatedResponse(inserted, false)
+        if (inserted != null) return ExperienceCreated(inserted, false)
         val existing = findByHash(userId, hash) ?: throw IllegalStateException("Experience duplicate could not be loaded after insert conflict")
-        return ExperienceCreatedResponse(existing, true)
+        return ExperienceCreated(existing, true)
     }
 
+    /** Saves 1–30 reviewed items as source LINKEDIN; items matching a saved experience go to `duplicates`, not stored. */
     @Transactional
     fun batch(userId: UUID, request: ExperienceBatchRequest): ExperienceBatchResult {
         val inputs = request.items

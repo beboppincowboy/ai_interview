@@ -245,7 +245,7 @@ class VoiceSessionIntegrationTests {
     }
 
     @Test
-    fun concurrentIdenticalSavesAndALaterReplayKeepOneTranscriptAndTheOriginalSubmission() {
+    fun concurrentIdenticalSavesAndALaterDuplicateSaveKeepOneTranscriptAndTheOriginalSubmission() {
         val session = voice.create(readySet().id)
         val reviewed = transcript(session, "First answer", "Second answer")
 
@@ -257,10 +257,10 @@ class VoiceSessionIntegrationTests {
         jdbc.update("UPDATE ai_interview_app.background_jobs SET status = 'SUCCEEDED', stage = 'COMPLETED', completed_at = now() WHERE id = ?", jobId)
 
         // Order and surrounding whitespace are normalized away, so this is the same reviewed transcript.
-        val replay = voice.save(session.id, VoiceTranscript(reviewed.answers.reversed().map { it.copy(answerText = " ${it.answerText} ") }))
-        assertThat(replay.duplicate).isTrue()
-        assertThat(replay.session.submissionJobId).isEqualTo(jobId)
-        assertThat(replay.session.transcript).isEqualTo(reviewed)
+        val again = voice.save(session.id, VoiceTranscript(reviewed.answers.reversed().map { it.copy(answerText = " ${it.answerText} ") }))
+        assertThat(again.duplicate).isTrue()
+        assertThat(again.session.submissionJobId).isEqualTo(jobId)
+        assertThat(again.session.transcript).isEqualTo(reviewed)
         assertThat(count("background_jobs")).isEqualTo(1)
         Mockito.verify(guard, Mockito.times(1)).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
 
@@ -282,11 +282,11 @@ class VoiceSessionIntegrationTests {
         assertThat(voice.get(expired.id).transcript).isNull()
         assertThat(count("background_jobs")).isEqualTo(1)
 
-        // A committed Save outlives the draft window and still replays.
+        // A committed Save outlives the draft window and still returns it as a duplicate.
         age(late.id, Duration.ofHours(25))
-        val replay = voice.save(late.id, transcript(late, "Finished after the run ended"))
-        assertThat(replay.duplicate).isTrue()
-        assertThat(replay.session.status).isEqualTo(VoiceSessionStatus.SAVED)
+        val again = voice.save(late.id, transcript(late, "Finished after the run ended"))
+        assertThat(again.duplicate).isTrue()
+        assertThat(again.session.status).isEqualTo(VoiceSessionStatus.SAVED)
     }
 
     @Test

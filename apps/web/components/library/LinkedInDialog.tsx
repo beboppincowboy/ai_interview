@@ -104,7 +104,7 @@ export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; tri
                         <p className="font-medium">{item.title}</p>
                         <p className="line-clamp-3 text-sm text-muted-foreground">{item.description}</p>
                         {item.duplicateOf ? (
-                          <p className="text-sm text-muted-foreground">Already saved as “{item.duplicateOf.title}”; it will be skipped.</p>
+                          <p className="text-sm text-muted-foreground">Already saved as “{item.duplicateOf.title}”; it will not be saved again.</p>
                         ) : null}
                       </div>
                       {!item.duplicateOf ? (

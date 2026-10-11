@@ -21,17 +21,17 @@ class TargetJobController(
     private val requestGuard: RedisRequestGuard,
 ) {
     @PostMapping
-    fun create(@RequestBody request: CreateTargetJobRequest): ResponseEntity<TargetJobCreatedResponse> {
+    fun create(@RequestBody request: CreateTargetJobRequest): ResponseEntity<TargetJobCreated> {
         val name = RequestValidation.text("name", request.name, 1, 80)
         val text = RequestValidation.text("text", request.text, 100, 20_000)
         return requestGuard.withIdempotentHttpCache(
             "create-target-job",
             listOf(name, text),
-            TargetJobCreatedResponse::class.java,
+            TargetJobCreated::class.java,
             Supplier {
                 val created = targetJobService.create(name, text)
                 ResponseEntity.status(if (created.duplicate) HttpStatus.OK else HttpStatus.CREATED)
-                    .body(TargetJobCreatedResponse(created.targetJob, created.duplicate))
+                    .body(TargetJobCreated(created.targetJob, created.duplicate))
             },
         )
     }
@@ -61,4 +61,4 @@ class TargetJobController(
 
 data class CreateTargetJobRequest(val name: String?, val text: String?)
 data class RenameTargetJobRequest(val name: String?)
-data class TargetJobCreatedResponse(val targetJob: TargetJobDetail, val duplicate: Boolean)
+data class TargetJobCreated(val targetJob: TargetJobDetail, val duplicate: Boolean)

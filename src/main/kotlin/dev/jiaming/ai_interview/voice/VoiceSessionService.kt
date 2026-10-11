@@ -122,7 +122,8 @@ class VoiceSessionService(
 
     /**
      * Saves the reviewed transcript and starts its report job in one transaction (KTD6). An identical repeated Save
-     * returns the committed outcome; a different one after Save is a conflict. Save is accepted until the draft expires.
+     * returns the committed outcome with `duplicate = true`; a different one after Save is a conflict. Save is accepted
+     * until the draft expires.
      */
     fun save(sessionId: UUID, transcript: VoiceTranscript): VoiceSaveResult {
         jobSubmissionService.assertApiAvailable()

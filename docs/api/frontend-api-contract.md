@@ -367,7 +367,8 @@ Body: `{ "items": ExperienceInput[] }`, 1–30 items, with `source` recorded as 
 ```
 
 `created` holds full `Experience` objects (shortened above). `duplicates` lists the items that matched a saved
-experience: they are not stored and are not an error (R3). The UI shows each duplicate with a note.
+experience: they are not stored and are not an error (R3). The UI shows each duplicate with a note. A duplicate item
+is dropped whole: none of its fields (organization, dates) update the saved experience.
 
 A list outside 1–30 items returns `400 INVALID_REQUEST` with a message naming `items`. Duplicate matching is
 per user and uses whitespace-collapsed, case-insensitive title and description; organization and dates do not

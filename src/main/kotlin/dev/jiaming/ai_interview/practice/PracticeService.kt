@@ -34,7 +34,10 @@ class PracticeService(
         return view(userId, findSet(userId, "id = ?", setId) ?: notFound())
     }
 
-    /** Returns the pair's set, creating it with its first generation job when it does not exist yet (§7.1). */
+    /**
+     * Returns the pair's set, creating it with its first generation job when it does not exist yet (§7.1); an existing set
+     * comes back with `duplicate = true` and starts no job. Throws 409 RESUME_NOT_READY for a new set on an unready resume.
+     */
     fun create(resumeId: UUID, targetJobId: UUID): PracticeSetCreated {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
