@@ -31,8 +31,9 @@ Status meanings:
   `code` is SCREAMING_SNAKE and stable. `message` is for logs. The UI maps codes to its own copy.
 - **Idempotency:** every `POST` accepts the existing `Idempotency-Key` header. The same key with the same body
   returns the first response (for job submissions, `reused: true`). The same key with a different body returns
-  `409 CONFLICT`. The web app sends one key per user action: its own automatic network retries reuse the key,
-  and a user pressing Retry sends a new key.
+  `409 CONFLICT`. The web app sends one key per `POST` user action: its own automatic network retries reuse the
+  key, and a user pressing Retry sends a new key. `GET` is retried without a key. `PATCH` and `DELETE` carry no
+  key and are never retried automatically; a transient failure surfaces to the user.
 - **Rate limits (existing Redis guard):** every request that starts an AI job, including retries and re-scores,
   counts against the AI limit (default 12 per 60 s per client). Uploads count against the upload limit
   (default 20 per 60 s). Over the limit returns `429 RATE_LIMITED`.

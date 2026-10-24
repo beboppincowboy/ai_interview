@@ -68,6 +68,28 @@ describe("apiRequest", () => {
     expect(first).not.toBe(second);
   });
 
+  it.each(["PATCH", "DELETE"] as const)("sends %s once with no idempotency key and surfaces a transient failure", async (method) => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(503, { code: "SERVICE_UNAVAILABLE", message: "down" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = await apiRequest("/api/resumes/r1", { method, body: { name: "x" }, retries: 2, retryDelayMs: 0 }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 503, retryable: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).has("Idempotency-Key")).toBe(false);
+  });
+
+  it("retries GET without an idempotency key", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(jsonResponse(503, { code: "SERVICE_UNAVAILABLE", message: "down" }))
+      .mockResolvedValueOnce(jsonResponse(200, { items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiRequest("/api/resumes", { retryDelayMs: 0 })).resolves.toEqual({ items: [] });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.every(([, init]) => !new Headers(init.headers).has("Idempotency-Key"))).toBe(true);
+  });
+
   it("sends FormData without a JSON content type", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(202, {}));
     vi.stubGlobal("fetch", fetchMock);
