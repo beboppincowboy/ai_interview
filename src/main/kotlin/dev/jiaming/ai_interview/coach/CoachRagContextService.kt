@@ -15,6 +15,7 @@ import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.Optional
 
+/** Builds task-scoped context; short document pairs bypass vector retrieval, and RAG failures fall back to local chunks. */
 @Service
 class CoachRagContextService @Autowired constructor(
     private val chunker: SectionAwareTextChunker,
@@ -27,17 +28,17 @@ class CoachRagContextService @Autowired constructor(
         retrievalService: RagRetrievalService, meterRegistry: MeterRegistry) :
         this(chunker, indexingService, retrievalService, meterRegistry, RagProperties(1024, "gemini-embedding-001", "section-block-v3"))
 
-    /** Job-fit context: at most [RagProperties.assessmentMaxSnippets] retrieved snippets. Resume + target job text totalling at most 6,000 chars is sent whole with no retrieval or budget (vectorBacked=false); RAG failures fall back to local chunks, never throw. */
+    /** Job-fit context: at most [RagProperties.assessmentMaxSnippets] snippets; short pairs go whole, and returned context reports whether vectors backed it. */
     fun jobFitContext(input: CoachAnalysisInput) = ragContext(input.resume(), input.targetJob(), jobFitQueries(input),
         SelectionProfile("job-fit", properties.assessmentMaxSnippets(), properties.assessmentMinJobDescriptionSnippets()))
-    /** Practice-question context: at most [RagProperties.questionMaxSnippets] retrieved snippets. Resume + target job text totalling at most 6,000 chars is sent whole with no retrieval or budget (vectorBacked=false); RAG failures fall back to local chunks, never throw. */
+    /** Practice-question context: at most [RagProperties.questionMaxSnippets] snippets; short pairs go whole, and returned context reports whether vectors backed it. */
     fun practiceQuestionContext(input: CoachAnalysisInput) = ragContext(input.resume(), input.targetJob(), questionQueries(input),
         SelectionProfile("practice-questions", properties.questionMaxSnippets(), properties.questionMinJobDescriptionSnippets()))
-    /** Feedback context: at most [RagProperties.feedbackMaxSnippets] retrieved snippets. Resume + target job text totalling at most 6,000 chars is sent whole with no retrieval or budget (vectorBacked=false); RAG failures fall back to local chunks, never throw. */
+    /** Feedback context: at most [RagProperties.feedbackMaxSnippets] snippets; short pairs go whole, and returned context reports whether vectors backed it. */
     fun feedbackContext(input: CoachFeedbackInput) = ragContext(input.resume(), input.targetJob(), feedbackQueries(input),
         SelectionProfile("feedback", properties.feedbackMaxSnippets(), properties.feedbackMinJobDescriptionSnippets()))
 
-    /** The resume text to send for suggestions: whole within 6,000 chars (no retrieval or budget), otherwise at most [RagProperties.assessmentMaxSnippets] snippets retrieval finds for [targetJob]. */
+    /** Returns the resume whole through 6,000 chars, else at most [RagProperties.assessmentMaxSnippets] snippets; retrieval errors fall back locally. */
     fun suggestionSourceText(resume: ResolvedDocument, targetJob: ResolvedDocument): String =
         if (safe(resume.normalizedText()).length <= DIRECT_CONTEXT_LIMIT) resume.normalizedText()
         else ragContext(resume, Optional.empty(), suggestionQueries(targetJob),

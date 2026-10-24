@@ -12,7 +12,7 @@ import { useSaveExperiences, useSplitLinkedIn } from "@/lib/query/library";
 import { useJob } from "@/lib/query/useJob";
 import { TextField } from "./TextField";
 
-/** Paste LinkedIn Experience text, let the AI split it, review the items, then save the ones kept. */
+/** Splits and reviews pasted experience, persists text/job/removals to localStorage, and reopens on mount when recovery exists. */
 export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; trigger?: React.ReactNode }) {
   const [recovery] = useState(readLinkedInRecovery);
   const [open, setOpen] = useState(Boolean(recovery?.text || recovery?.jobId));

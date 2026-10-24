@@ -9,6 +9,7 @@ import { useResume } from "@/lib/query/library";
 import { DeleteConfirm } from "./DeleteConfirm";
 import { InlineRename } from "./InlineRename";
 
+/** Shows one resume with rename/delete actions; expanding a READY row fetches its text on demand. */
 export function ResumeRow({ resume }: { resume: Resume }) {
   const [expanded, setExpanded] = useState(false);
   const detail = useResume(resume.id, { enabled: expanded });

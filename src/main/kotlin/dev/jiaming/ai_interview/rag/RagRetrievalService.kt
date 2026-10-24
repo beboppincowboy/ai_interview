@@ -31,11 +31,13 @@ class RagRetrievalService(
     fun retrieve(query: String?, index: RagDocumentIndexHandle?, topK: Int) =
         if (index == null) emptyList() else retrieve(query, listOf(index), topK)
 
+    /** Deletes vectors matching an index ID and claim version; returns Unit and propagates vector-store errors. */
     fun deleteIndexClaim(indexId: UUID, claimVersion: Long) {
         val builder = FilterExpressionBuilder()
         vectorStore().delete(builder.and(builder.eq("indexId", indexId.toString()), builder.eq("claimVersion", claimVersion)).build())
     }
 
+    /** Deletes all vectors for an index ID; returns Unit and propagates vector-store errors. */
     fun deleteIndex(indexId: UUID) {
         val builder = FilterExpressionBuilder()
         vectorStore().delete(builder.eq("indexId", indexId.toString()).build())

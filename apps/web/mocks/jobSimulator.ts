@@ -1,8 +1,10 @@
 // Job state is derived from the stored creation time, not timers, so a job keeps advancing across reloads.
 import type { LatestJob, JobError, JobInputRefs, JobStage, JobStatus, JobType } from "@/lib/api/types";
 
+/** Mock retryable jobs allow three attempts. */
 export const MAX_ATTEMPTS = 3;
 
+/** Ordered stages used to derive simulated progress for every job kind. */
 export const JOB_STAGES: Record<JobType, JobStage[]> = {
   RESUME_EXTRACTION: ["READING_FILE", "EXTRACTING_TEXT", "NORMALIZING_TEXT", "CHUNKING_TEXT"],
   RESUME_SCORE: ["SCORING_RESUME"],
@@ -14,8 +16,10 @@ export const JOB_STAGES: Record<JobType, JobStage[]> = {
   VOICE_REPORT: ["SCORING_ANSWER"]
 };
 
+/** Simulated terminal failure and whether it shows a retrying attempt first. */
 export type JobFailure = { code: string; message: string; retryable: boolean };
 
+/** Persisted mock job inputs, timing, simulated failure, and materialized result. */
 export type MockJob = {
   id: string;
   type: JobType;
@@ -31,6 +35,7 @@ export type MockJob = {
   payload?: Record<string, string>;
 };
 
+/** Job lifecycle, derived progress, attempts, failure, and timestamps at one clock instant. */
 export type JobState = {
   status: JobStatus;
   stage: JobStage;
@@ -40,6 +45,7 @@ export type JobState = {
   completedAt: number | null;
 };
 
+/** Derives queued/stage/retry/terminal state from `createdAt`; retryable failures show one RETRYING state before failure. */
 export function jobState(job: MockJob, now: number): JobState {
   const stages = JOB_STAGES[job.type];
   const elapsed = now - job.createdAt;

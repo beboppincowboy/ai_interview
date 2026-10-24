@@ -27,6 +27,7 @@ class PracticeService(
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
 ) {
+    /** Returns the owner-scoped set view or 404 when it does not exist for this user. */
     fun get(setId: UUID): PracticeSetView {
         val userId = localUserService.localUserId()
         return view(userId, findSet(userId, "id = ?", setId) ?: notFound())
@@ -69,7 +70,7 @@ class PracticeService(
         }
     }
 
-    /** Starts a new generation job for a set whose last generation failed (§7.3). */
+    /** Starts generation only when the latest generation failed; otherwise throws 409 `PRACTICE_SET_NOT_FAILED`. */
     fun retry(setId: UUID): PracticeSetView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -87,7 +88,7 @@ class PracticeService(
         }
     }
 
-    /** Appends a user question after the AI questions (§7.4). [text] is already trimmed and checked. */
+    /** Appends a validated 10–500 character question after AI questions; rejects generating sets and more than 10 user questions. */
     fun addQuestion(setId: UUID, text: String): PracticeQuestionView {
         val userId = localUserService.localUserId()
         return inTransaction {
@@ -135,7 +136,7 @@ class PracticeService(
         ).map { it.copy(attempts = attemptViews(userId, attempts[it.id].orEmpty())) }
     }
 
-    /** Saves the next numbered attempt and starts its feedback job in one transaction (§7.5). [text] is already trimmed and checked. */
+    /** Saves the next numbered attempt and starts feedback atomically; an unchanged latest answer conflicts with `ANSWER_UNCHANGED`. */
     fun submitAttempt(setId: UUID, questionId: UUID, text: String): AttemptView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -160,7 +161,7 @@ class PracticeService(
         }
     }
 
-    /** Starts a new feedback job for a failed attempt, keeping its ID, number and text (§7.6). */
+    /** Retries only failed feedback while preserving attempt identity, number, and text; otherwise throws `ATTEMPT_NOT_FAILED`. */
     fun retryAttempt(attemptId: UUID): AttemptView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()

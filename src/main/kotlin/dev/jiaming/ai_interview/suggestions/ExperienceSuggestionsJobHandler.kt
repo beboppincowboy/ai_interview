@@ -9,6 +9,7 @@ import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobType
 import org.springframework.stereotype.Component
 
+/** Resolves exact stored inputs; an empty source list produces an empty result without an AI call. */
 @Component
 class ExperienceSuggestionsJobHandler(
     private val coachService: AiResumeCoachService,

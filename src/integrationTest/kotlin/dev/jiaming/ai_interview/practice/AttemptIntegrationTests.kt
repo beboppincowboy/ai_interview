@@ -256,7 +256,7 @@ class AttemptIntegrationTests {
         val question = set.questions.first()
         useIdempotencyKey("flaky")
         Mockito.doThrow(IllegalStateException("job store unavailable")).doCallRealMethod()
-            .`when`(jobs).createIfAbsentWithInitialResult(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
+            .`when`(jobs).createIfAbsentWithInitialCheckpoint(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
 
         assertThatThrownBy { submit(set.id, question.id, "My answer") }.hasMessageContaining("job store unavailable")
         assertThat(count("answer_attempts")).isZero()

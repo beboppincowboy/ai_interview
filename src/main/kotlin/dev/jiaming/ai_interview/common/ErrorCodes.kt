@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatusCode
  * one code wherever it surfaces. Failures with their own code (storage, AI provider, `ApiRequestException`) keep it.
  */
 object ErrorCodes {
+    /** Maps known HTTP status classes to public codes; unlisted statuses become `REQUEST_FAILED`. */
     fun forStatus(status: HttpStatusCode): String = when (status.value()) {
         400 -> "INVALID_REQUEST"
         404 -> "NOT_FOUND"

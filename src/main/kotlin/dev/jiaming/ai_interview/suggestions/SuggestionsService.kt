@@ -30,6 +30,7 @@ class SuggestionsService(
     private val transactionOperations: TransactionOperations,
     private val resumePersistenceService: ResumePersistenceService,
 ) {
+    /** Reads owner-scoped pair state; hides deleted/obsolete source items and marks results stale when source IDs change. */
     fun get(resumeId: UUID, targetJobId: UUID): SuggestionsView {
         val userId = localUserService.localUserId()
         requireOwnedInputs(userId, resumeId, targetJobId, lockRows = false, requireReady = false)
@@ -50,6 +51,7 @@ class SuggestionsService(
         return SuggestionsView(resumeId, targetJobId, current.isNotEmpty(), stale, visible, row?.resultCreatedAt, latestJob)
     }
 
+    /** Requires ready owned inputs and at least one source; otherwise returns 404/409 `NO_EXPERIENCE_SOURCES`. */
     fun run(resumeId: UUID, targetJobId: UUID): JobAcceptedResponse {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -93,6 +95,7 @@ class SuggestionsService(
         }, userId, resumeId, userId,
     )
 
+    /** Loads every current resume/experience source; resume variants retain full documents for later budget selection. */
     fun promptSources(userId: UUID, resumeId: UUID): List<SuggestionSourceInput> {
         val experiences = jdbcTemplate.query(
             "SELECT id, title, organization, start_date, end_date, description FROM ai_interview_app.experiences WHERE user_id = ?",

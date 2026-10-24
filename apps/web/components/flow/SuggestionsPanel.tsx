@@ -9,6 +9,7 @@ import { useFollowJob } from "@/lib/query/useJob";
 import { JobProgress } from "./JobProgress";
 import { useAutoStart } from "./useAutoStart";
 
+/** Auto-starts once per pair when sources exist; `stale` means saved sources changed and enables an explicit refresh. */
 export function SuggestionsPanel({ resumeId, targetJobId }: { resumeId: string; targetJobId: string }) {
   const view = useSuggestions(resumeId, targetJobId);
   const run = useRunSuggestions(resumeId, targetJobId);

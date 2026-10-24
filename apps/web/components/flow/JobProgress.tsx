@@ -14,7 +14,7 @@ type Props = {
   startError?: unknown;
 };
 
-/** Progress, retrying, timed-out and failed states for one AI step. Renders nothing once the job succeeded. */
+/** Shows progress/recovery for a job; null or succeeded jobs render nothing unless starting failed. The `retrying` prop disables a user retry. */
 export function JobProgress({ job, timedOut, onCheckAgain, onRetry, retrying, startError }: Props) {
   const failed = job?.status === "FAILED" || Boolean(startError);
   if (failed) {

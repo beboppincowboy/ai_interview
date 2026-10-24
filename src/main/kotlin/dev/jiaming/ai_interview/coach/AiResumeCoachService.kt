@@ -12,6 +12,7 @@ import dev.jiaming.ai_interview.suggestions.SuggestionSourceInput
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.stereotype.Service
 
+/** Runs structured coaching calls; only `INVALID_RESPONSE` gets one repair attempt, and other provider failures propagate. */
 @Service
 class AiResumeCoachService(
     private val generationClient: StructuredGenerationClient,
@@ -20,12 +21,13 @@ class AiResumeCoachService(
     private val responseMapper: CoachResponseMapper,
     private val meterRegistry: MeterRegistry
 ) {
+    /** Uses job-fit RAG context and normalizes the model result; invalid structured output may be repaired once. */
     fun assessJobFit(input: CoachAnalysisInput): dev.jiaming.ai_interview.fit.JobFitResult {
         val context = ragContextService.jobFitContext(input)
         return responseMapper.normalizeJobFit(generateStructured(promptBuilder.buildJobFitPrompt(context), JobFitResponse::class.java))
     }
 
-    // ponytail: per-source budget only (KTD7); add a total prompt cap if users keep hundreds of sources.
+    /** Resumes are retrieved against the target job; saved-experience text is supplied whole, with at most eight matches returned. */
     fun suggestExperiences(resume: ResolvedDocument, targetJob: ResolvedDocument, sources: List<SuggestionSourceInput>): ExperienceSuggestionsResult {
         val texts = sources.map { input ->
             input.source to when (input) {
@@ -41,24 +43,27 @@ class AiResumeCoachService(
         }
     }
 
+    /** Returns 3–8 valid question drafts; fewer than three triggers the single schema-repair attempt. */
     fun generatePracticeQuestions(input: CoachAnalysisInput): PracticeQuestionDrafts {
         val context = ragContextService.practiceQuestionContext(input)
         return generateStructured(promptBuilder.buildPracticeQuestionPrompt(context), PracticeQuestionsResponse::class.java,
             responseMapper::normalizePracticeQuestions)
     }
 
-    /** Scores a practice attempt against its question and the pair's resume and job description (KTD7). */
+    /** Scores a practice answer using the pair's RAG context; incomplete capture limits scoring to recorded words. */
     fun scorePracticeAnswer(input: CoachFeedbackInput): AnswerFeedbackResult {
         val context = ragContextService.feedbackContext(input)
         return generateStructured(promptBuilder.buildPracticeFeedbackPrompt(input, context), AnswerFeedbackResponse::class.java,
             responseMapper::normalizeFeedback)
     }
 
+    /** Scores resume text without retrieval; unmatched rewrites are removed and schema errors may be repaired once. */
     fun scoreResume(resumeText: String, jobTitle: String?): ResumeScoreResult = responseMapper.normalizeResumeScore(
         generateStructured(promptBuilder.buildResumeScorePrompt(resumeText, jobTitle), ResumeScoreDraftResponse::class.java),
         resumeText, jobTitle
     )
 
+    /** Splits pasted experience text; invalid required fields or month values trigger the single repair attempt. */
     fun splitExperience(text: String): ExperienceSplitResult = generateStructured(
         promptBuilder.buildExperienceSplitPrompt(text),
         ExperienceSplitResponse::class.java,

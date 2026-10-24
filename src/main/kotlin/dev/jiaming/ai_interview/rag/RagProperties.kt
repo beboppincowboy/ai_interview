@@ -3,6 +3,7 @@ package dev.jiaming.ai_interview.rag
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.bind.ConstructorBinding
 
+/** Configures retrieval budgets; nonpositive limits use defaults and model/schema names use nonblank defaults. */
 @ConfigurationProperties(prefix = "app.rag")
 class RagProperties @ConstructorBinding constructor(
     embeddingDimensions: Int,
@@ -36,17 +37,30 @@ class RagProperties @ConstructorBinding constructor(
     constructor(embeddingDimensions: Int, embeddingModel: String?, chunkSchema: String?) :
         this(embeddingDimensions, 6, 4, 14, 16, 10, 3, 3, 2, 3, 15, embeddingModel, chunkSchema)
 
+    /** Returns vector dimension count, defaulting to 1024 when configured nonpositive. */
     fun embeddingDimensions() = dimensions
+    /** Returns resume candidate top-K, defaulting to 6 when configured nonpositive. */
     fun resumeCandidateTopK() = resumeTopK
+    /** Returns target-job candidate top-K, defaulting to 4 when configured nonpositive. */
     fun jobDescriptionCandidateTopK() = jdTopK
+    /** Returns the assessment snippet cap, defaulting to 14. */
     fun assessmentMaxSnippets() = assessmentBudget
+    /** Returns the question-context snippet cap, defaulting to 16. */
     fun questionMaxSnippets() = questionBudget
+    /** Returns the feedback-context snippet cap, defaulting to 10. */
     fun feedbackMaxSnippets() = feedbackBudget
+    /** Returns the assessment minimum target-job snippets, clamped to zero or greater. */
     fun assessmentMinJobDescriptionSnippets() = assessmentJdMinimum
+    /** Returns the question minimum target-job snippets, clamped to zero or greater. */
     fun questionMinJobDescriptionSnippets() = questionJdMinimum
+    /** Returns the feedback minimum target-job snippets, clamped to zero or greater. */
     fun feedbackMinJobDescriptionSnippets() = feedbackJdMinimum
+    /** Returns the per-section snippet cap, defaulting to 3. */
     fun maxSnippetsPerSection() = maxSection
+    /** Returns the reciprocal-rank-fusion constant, defaulting to 15. */
     fun rrfK() = reciprocalRankK
+    /** Returns the nonblank embedding model name, defaulting to `gemini-embedding-001`. */
     fun embeddingModel() = model
+    /** Returns the nonblank chunk schema name, defaulting to `section-block-v3`. */
     fun chunkSchema() = schema
 }

@@ -29,7 +29,9 @@ class RedisRequestGuard(
     internal var inFlightTtl: Duration = Duration.ofMinutes(2)
     internal var heartbeatInterval: Duration = Duration.ofSeconds(40)
 
+    /** Rejects requests over the configured per-action AI limit with 429; disabled limits and Redis errors allow them. */
     fun assertAiAllowed(action: String) = assertAllowed(action, properties.rateLimit.aiLimit)
+    /** Rejects uploads over their configured limit with 429; disabled limits and Redis errors allow them. */
     fun assertUploadAllowed() = assertAllowed("resume-upload", properties.rateLimit.uploadLimit)
 
     /**

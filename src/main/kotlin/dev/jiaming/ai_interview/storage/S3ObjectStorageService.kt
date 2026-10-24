@@ -28,6 +28,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.services.s3.model.Tag
 import software.amazon.awssdk.services.s3.model.Tagging
 
+/** S3 adapter that creates its bucket on first use and installs pending-upload lifecycle cleanup. */
 @Service
 class S3ObjectStorageService(private val s3Client: S3Client, private val properties: StorageProperties) : ObjectStorageService {
     private val bucketReady = AtomicBoolean(false)

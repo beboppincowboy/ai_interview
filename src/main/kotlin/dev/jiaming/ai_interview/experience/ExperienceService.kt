@@ -23,6 +23,7 @@ class ExperienceService(
     private val contentHasher: ContentHasher,
     private val jobSubmissionService: JobSubmissionService
 ) {
+    /** Lists owner-scoped experiences newest first. */
     fun list(userId: UUID): ExperienceListResponse = ExperienceListResponse(jdbcTemplate.query(
         "SELECT * FROM ai_interview_app.experiences WHERE user_id = ? ORDER BY created_at DESC, id",
         experienceRowMapper,
@@ -55,7 +56,7 @@ class ExperienceService(
         }
     }
 
-    // Only suggestion sets that used the experience are affected; they are kept and read as stale.
+    /** Returns 404 for a missing item; affected suggestion sets are kept and become stale. */
     fun deleteImpact(userId: UUID, experienceId: UUID): DeleteImpact {
         jdbcTemplate.query(
             "SELECT id FROM ai_interview_app.experiences WHERE user_id = ? AND id = ?",
@@ -68,11 +69,13 @@ class ExperienceService(
         return DeleteImpact(0, 0, 0, 0, 0, stale)
     }
 
+    /** Deletes the owner-scoped item or returns 404 when no row matched. */
     fun delete(userId: UUID, experienceId: UUID) {
         val deleted = jdbcTemplate.update("DELETE FROM ai_interview_app.experiences WHERE user_id = ? AND id = ?", userId, experienceId)
         if (deleted != 1) throw experienceNotFound()
     }
 
+    /** Creates a validated FORM experience or returns its existing normalized title+description duplicate. */
     @Transactional
     fun create(userId: UUID, input: ExperienceInput): ExperienceCreated {
         val draft = validate(input)
@@ -107,6 +110,7 @@ class ExperienceService(
         return ExperienceBatchResult(created, duplicates)
     }
 
+    /** Validates 50–20,000 trimmed characters and submits a new split job; null resource disables job reuse. */
     fun split(request: ExperienceSplitRequest): JobAcceptedResponse {
         val text = RequestValidation.text("text", request.text, 50, 20_000)
         // A null resource deliberately bypasses active-job reuse; each explicit split is a new review job.
@@ -118,6 +122,7 @@ class ExperienceService(
         )
     }
 
+    /** Adds duplicate references by normalized title and description without saving the split result. */
     fun annotateDuplicates(userId: UUID, result: ExperienceSplitResult): ExperienceSplitResult {
         val hashes = result.items.map { contentHash(it.title, it.description) }.distinct()
         val existingByHash = findByHashes(userId, hashes)

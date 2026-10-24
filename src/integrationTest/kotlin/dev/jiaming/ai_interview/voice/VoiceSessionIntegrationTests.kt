@@ -233,7 +233,7 @@ class VoiceSessionIntegrationTests {
         val session = voice.create(readySet().id)
         val reviewed = transcript(session, "An answer")
         Mockito.doAnswer { it.callRealMethod(); throw IllegalStateException("connection lost before commit") }
-            .`when`(jobs).createIfAbsentWithInitialResult(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
+            .`when`(jobs).createIfAbsentWithInitialCheckpoint(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
 
         assertThatThrownBy { voice.save(session.id, reviewed) }.hasMessageContaining("connection lost before commit")
         assertThat(voice.get(session.id)).isEqualTo(session)
@@ -422,7 +422,7 @@ class VoiceSessionIntegrationTests {
         val inserted = CountDownLatch(1)
         val release = CountDownLatch(1)
         Mockito.doAnswer { invocation -> invocation.callRealMethod().also { inserted.countDown(); release.await(10, TimeUnit.SECONDS) } }
-            .`when`(jobs).createIfAbsentWithInitialResult(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
+            .`when`(jobs).createIfAbsentWithInitialCheckpoint(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
         val executor = Executors.newFixedThreadPool(2)
         try {
             val save = executor.submit(Callable { voice.save(sessionId, reviewed) })

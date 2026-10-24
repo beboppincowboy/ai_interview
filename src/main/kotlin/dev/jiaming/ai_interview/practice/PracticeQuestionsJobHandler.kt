@@ -11,6 +11,7 @@ import dev.jiaming.ai_interview.jobs.JobType
 import java.util.Optional
 import org.springframework.stereotype.Component
 
+/** Generates and checkpoints question drafts from stored pair inputs, then materializes the saved questions. */
 @Component
 class PracticeQuestionsJobHandler(
     private val coachService: AiResumeCoachService,

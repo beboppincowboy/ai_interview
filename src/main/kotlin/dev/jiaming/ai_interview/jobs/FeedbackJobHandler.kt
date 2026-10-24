@@ -8,6 +8,7 @@ import dev.jiaming.ai_interview.document.DocumentReferenceResolver
 import dev.jiaming.ai_interview.practice.AnswerFeedbackResult
 import dev.jiaming.ai_interview.practice.PracticeService
 
+/** Loads an attempt and its exact stored documents, reuses a saved feedback checkpoint, then materializes feedback. */
 @Component
 class FeedbackJobHandler(
     private val coachService: AiResumeCoachService,

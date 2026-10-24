@@ -23,13 +23,16 @@ import java.io.IOException
 import java.time.Instant
 import java.util.Locale
 
+/** Converts model DTOs into application results; parse and required-field failures use `INVALID_RESPONSE`. */
 @Component
 class CoachResponseMapper(private val objectMapper: ObjectMapper) {
+    /** Parses JSON into [responseType]; Jackson I/O or shape failures become a non-retryable `INVALID_RESPONSE`. */
     fun <T> parse(json: String, responseType: Class<T>): T = try { objectMapper.readValue(json, responseType) }
     catch (exception: IOException) {
         throw AiProviderException(AiProviderErrorCode.INVALID_RESPONSE, "Model returned JSON that did not match the expected AI contract", exception, false)
     }
 
+    /** Requires bounded title/description and valid `YYYY-MM` dates; invalid required fields throw `INVALID_RESPONSE`. */
     fun normalizeExperienceSplit(response: ExperienceSplitResponse): ExperienceSplitResult {
         val items = response.items.orEmpty().filterNotNull().map { item ->
             val title = experienceText(item.title, "title", 1, 120)
@@ -49,7 +52,7 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
         return ExperienceSplitResult(items)
     }
 
-    /** Keeps only rewrites whose original line was copied from [resumeText], so each one points at a real line. */
+    /** Clamps scores, supplies a fallback fix/summary, and keeps only rewrites whose original line occurs in [resumeText]. */
     fun normalizeResumeScore(response: ResumeScoreDraftResponse, resumeText: String, jobTitle: String?): ResumeScoreResult {
         val scores = response.scores ?: AssessmentScores(0, 0, 0, 0, 0)
         val normalizedScores = AssessmentScores(
@@ -81,12 +84,14 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
         )
     }
 
+    /** Clamps scores and fills missing summary, next step, and empty feedback lists with fixed fallback text. */
     fun normalizeFeedback(response: AnswerFeedbackResponse): AnswerFeedbackResult = AnswerFeedbackResult(
         clampScore(response.score), fallback(response.summary, "The answer was scored, but no summary was returned."),
         fallback(response.nextStep, "Add clearer structure, technical detail, and measurable outcomes."), nonEmpty(response.strengths),
         nonEmpty(response.gaps), nonEmpty(response.betterAnswerOutline), response.followUpQuestion?.trim()?.ifEmpty { null }
     )
 
+    /** Clamps the score, drops malformed requirements, and maps an unknown priority to `MEDIUM` without throwing. */
     fun normalizeJobFit(response: JobFitResponse): JobFitResult = JobFitResult(
         fitScore = clampScore(response.fitScore ?: 0),
         summary = fallback(response.summary, "The fit was assessed, but no summary was returned."),
@@ -121,7 +126,7 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
         return PracticeQuestionDrafts(drafts)
     }
 
-    // Items must cite a source the model was given; the source's type and name come from our data, not the model.
+    /** Drops items with unknown source IDs or blank fields; the source type/name come from our data, and at most eight remain. */
     fun normalizeExperienceSuggestions(response: ExperienceSuggestionsResponse, sources: List<SuggestionSource>): ExperienceSuggestionsResult {
         val provided = sources.associateBy { it.id.toString() }
         return ExperienceSuggestionsResult(response.items.orEmpty().filterNotNull().mapNotNull { item ->

@@ -6,11 +6,12 @@ import { isTerminal, type LatestJob, type JobStatusResponse } from "@/lib/api/ty
 const POLL_INTERVAL_MS = 1_500;
 const POLL_CEILING_MS = 10 * 60_000;
 
+/** Cache key for one background job's polling response. */
 export function jobQueryKey(jobId: string) {
   return ["job", jobId] as const;
 }
 
-/** Polls a job until it is terminal or the time ceiling passes; `checkAgain` restarts polling. */
+/** Disabled without an ID; otherwise polls until terminal, a non-retryable error, or the ceiling and returns state plus `checkAgain`. */
 export function useJob<TResult = unknown>(
   jobId: string | null | undefined,
   { intervalMs = POLL_INTERVAL_MS, ceilingMs = POLL_CEILING_MS } = {}
@@ -52,10 +53,7 @@ export function useJob<TResult = unknown>(
   };
 }
 
-/**
- * Follows a resource's `latestJob`: polls while it runs and refreshes the resource's queries when it ends.
- * Returns the freshest view of the job (the poll result while running, otherwise the resource's copy).
- */
+/** Polls a nonterminal latest job, refreshes supplied query keys at termination, and returns its freshest view, timeout, and restart callback. */
 export function useFollowJob(latestJob: LatestJob | null | undefined, queryKeys: QueryKey[]) {
   const client = useQueryClient();
   const running = Boolean(latestJob) && !isTerminal(latestJob!.status);

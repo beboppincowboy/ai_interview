@@ -61,12 +61,13 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   UNSUPPORTED_FILE_TYPE: "Upload a PDF, DOC, DOCX, TXT or Markdown file."
 };
 
-/** The error's code when it is a known {@link ErrorCode}; null for any other code or a codeless error. */
+/** Returns a mapped `ApiError` or structural `JobError` code; unknown and unmapped codes return null. */
 export function errorCode(error: unknown): ErrorCode | null {
   const code = error instanceof ApiError || isJobError(error) ? error.code : null;
   return code && Object.hasOwn(ERROR_MESSAGES, code) ? code as ErrorCode : null;
 }
 
+/** Uses mapped copy, network/timeout messages, an Error message, or `fallback` for other failures. */
 export function friendlyError(error: unknown, fallback = "The request failed.") {
   const code = errorCode(error);
   if (code) {

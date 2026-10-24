@@ -1,5 +1,6 @@
 package dev.jiaming.ai_interview.ai
 
+/** The glossary's provider-neutral AI provider error; a job handler may retry when [retryable], [statusCode] is null without an HTTP response, and callers branch on [code] ([AiProviderErrorCode]). */
 class AiProviderException private constructor(
     val code: String,
     message: String,

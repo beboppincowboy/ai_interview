@@ -18,6 +18,7 @@ class TargetJobService(
     private val localUserService: LocalUserService,
     private val targetJobPersistenceService: TargetJobPersistenceService,
 ) {
+    /** Creates a new target job or returns the same owner's existing job with matching normalized text. */
     @Transactional
     fun create(name: String, text: String): TargetJobCreateResult {
         val userId = localUserService.localUserId()
@@ -26,6 +27,7 @@ class TargetJobService(
         return TargetJobCreateResult(targetJob, !saved.created)
     }
 
+    /** Lists owner-scoped target jobs newest first, then by ID. */
     fun list(): TargetJobListResponse {
         val userId = localUserService.localUserId()
         return TargetJobListResponse(jdbcTemplate.query(
@@ -40,11 +42,13 @@ class TargetJobService(
         ))
     }
 
+    /** Reads owner-scoped detail or returns 404. */
     fun get(targetJobId: UUID): TargetJobDetail {
         val userId = localUserService.localUserId()
         return findDetail(userId, targetJobId) ?: throw notFound()
     }
 
+    /** Updates the owned target-job name; the controller validates its length, and missing IDs return 404. */
     @Transactional
     fun rename(targetJobId: UUID, name: String): TargetJob {
         val userId = localUserService.localUserId()
@@ -62,6 +66,7 @@ class TargetJobService(
         return findSummary(userId, targetJobId) ?: throw notFound()
     }
 
+    /** Counts fits, suggestions, practice sets, attempts, and saved voice sessions; score/stale counts are not computed. */
     fun deleteImpact(targetJobId: UUID): TargetJobDeleteImpact {
         val userId = localUserService.localUserId()
         requireOwned(userId, targetJobId)
@@ -186,10 +191,15 @@ class TargetJobService(
     private fun notFound() = ApiRequestException(HttpStatus.NOT_FOUND, "TARGET_JOB_NOT_FOUND", "Target job was not found")
 }
 
+/** Creation result whose duplicate flag means normalized text matched and the existing name was preserved. */
 data class TargetJobCreateResult(val targetJob: TargetJobDetail, val duplicate: Boolean)
+/** Owner-scoped target-job list. */
 data class TargetJobListResponse(val items: List<TargetJob>)
+/** Target-job list item with stable identity and timestamps. */
 data class TargetJob(val id: UUID, val name: String, val createdAt: Instant, val updatedAt: Instant)
+/** Target-job list item plus posting text. */
 data class TargetJobDetail(val id: UUID, val name: String, val createdAt: Instant, val updatedAt: Instant, val text: String)
+/** Deletion preview; `scores` and `staleSuggestionSets` are always zero for target-job deletion. */
 data class TargetJobDeleteImpact(
     val scores: Int = 0,
     val fits: Int = 0,

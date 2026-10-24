@@ -14,6 +14,7 @@ import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RuntimeModeProperties
 
+/** Validates, deduplicates, creates, and dispatches background jobs through [submit]. */
 @Service
 class JobSubmissionService(
     private val jobStore: BackgroundJobStore, private val dispatcher: JobDispatcher,
@@ -48,9 +49,9 @@ class JobSubmissionService(
         if (type != JobType.RESUME_EXTRACTION) requestGuard.assertAiAllowed(AI_JOB_ACTION)
         return createOrReuse(type, resourceType, resourceId, payload, dedupKey, initialCheckpoint)
     }
-    /** Hashes [action] and [source] into a job dedup key for [submit]/[findReusable]. */
+    /** Hashes [action] and [source] into a stable job dedup key for [submit]/[findReusable]. */
     fun fingerprint(action: String, source: Any): String = fingerprintService.fingerprint(action, source)
-    /** Throws 503 when this process runs in worker-only mode; [submit] calls it too, so calling it first only fails fast. */
+    /** Throws 503 when jobs are disabled or this process runs in worker-only mode; [submit] always calls it. */
     fun assertApiAvailable() {
         if (!properties.enabled || !runtimeMode.apiEnabled()) throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
             "This process is running in worker-only mode and does not accept background jobs")
@@ -71,7 +72,7 @@ class JobSubmissionService(
         if (existing.isPresent) return existing.get()
         val userId = localUserService.localUserId()
         val request = objectMapper.valueToTree<JsonNode>(requestPayload)
-        val created = jobStore.createIfAbsentWithInitialResult(
+        val created = jobStore.createIfAbsentWithInitialCheckpoint(
             userId, type, resourceType, resourceId, request, fingerprint, properties.maxAttempts, initialCheckpointPayload,
         )
         if (created.isEmpty) return findReusable(type, fingerprint).orElseThrow { IllegalStateException("A matching active job won the submission race but could not be loaded") }

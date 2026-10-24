@@ -33,6 +33,7 @@ class VoiceSessionService(
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
 ) {
+    /** Returns the owner-scoped session view or 404. */
     fun get(sessionId: UUID): VoiceSessionView = find(localUserService.localUserId(), sessionId)?.view ?: notFound()
 
     /** Atomically spends one of the session's twelve Live token attempts before the external provider call. */
@@ -74,7 +75,7 @@ class VoiceSessionService(
     internal fun getForReport(userId: UUID, sessionId: UUID): VoiceSessionView =
         find(userId, sessionId)?.view ?: throw IllegalStateException("Voice report session $sessionId was not found for its job owner")
 
-    /** Starts a draft on a READY practice set with a copy of its first [MAX_QUESTIONS] AI questions in stored order. */
+    /** Starts a draft on a READY set with its first [MAX_QUESTIONS] AI questions in stored order; no AI questions gives 409. */
     fun create(practiceSetId: UUID): VoiceSessionView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -118,11 +119,7 @@ class VoiceSessionService(
         }
     }
 
-    /**
-     * Saves the reviewed transcript and starts its report job in one transaction (KTD6). An identical repeated Save
-     * returns the committed outcome with `duplicate = true`; a different one after Save is a conflict. Save is accepted
-     * until the draft expires.
-     */
+    /** Saves a normalized transcript and starts one report job atomically until draft expiry; identical saves replay, changed saves conflict, and invalid/oversized answers are rejected. */
     fun save(sessionId: UUID, transcript: VoiceTranscript): VoiceSaveResult {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -161,7 +158,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Replaces a failed current report job while preserving the original Save and valid completed answers. */
+    /** Retries only the failed current report job with valid answer checkpoints; an existing report returns unchanged. */
     fun retryReport(sessionId: UUID): VoiceSessionView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -201,7 +198,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Removes an unsaved draft. One statement, so a Save holding the row commits first and its saved row is kept. */
+    /** Deletes only an unsaved draft; missing sessions return 404, saved sessions conflict, and a save that commits first is kept. */
     fun discard(sessionId: UUID) {
         val userId = localUserService.localUserId()
         val deleted = jdbcTemplate.update(
@@ -213,7 +210,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Removes a session with its report jobs, their checkpoints and effects. */
+    /** Removes the owned session and its report jobs, checkpoints, and effects; missing sessions return 404. */
     fun delete(sessionId: UUID) {
         val userId = localUserService.localUserId()
         inTransaction {
@@ -233,7 +230,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Unsaved drafts past their expiry hold no transcript; Save already rejects them, so they go (KTD5). */
+    /** Deletes expired unsaved drafts, which have no transcript; called by scheduled cleanup. */
     @Scheduled(fixedDelayString = "\${app.voice.draft-cleanup-interval-ms:3600000}")
     fun removeExpiredDrafts() {
         val removed = jdbcTemplate.update("DELETE FROM ai_interview_app.voice_sessions WHERE saved_at IS NULL AND draft_expires_at <= now()")

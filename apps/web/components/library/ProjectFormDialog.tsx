@@ -9,7 +9,7 @@ import { useCreateExperience } from "@/lib/query/library";
 import { DuplicateNotice } from "./DuplicateNotice";
 import { TextField } from "./TextField";
 
-/** Add an experience by hand. Calls `onAdded` for a new experience; duplicates are shown inside the dialog. */
+/** Creates a manual experience; new items call optional `onAdded`, duplicates are shown in the dialog, and title/description have 120/2,000 character limits. */
 export function ProjectFormDialog({ onAdded, trigger }: { onAdded?: (experience: Experience) => void; trigger?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");

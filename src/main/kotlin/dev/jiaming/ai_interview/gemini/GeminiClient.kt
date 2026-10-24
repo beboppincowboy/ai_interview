@@ -24,6 +24,7 @@ import java.time.Duration
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+/** Structured Gemini JSON client using the provider-neutral transport and `GEMINI_*` wire error codes. */
 @Component
 @ConditionalOnProperty(prefix = "app.ai", name = ["chat-provider"], havingValue = "gemini", matchIfMissing = true)
 class GeminiClient(

@@ -13,7 +13,7 @@ function FailedAttempt({ setId, attempt }: { setId: string; attempt: Attempt }) 
   );
 }
 
-/** The latest attempt in full, then earlier attempts collapsed to their score and change. */
+/** Expects attempts oldest first, renders nothing when empty, and shows the last fully while earlier entries expand for text and feedback. */
 export function AttemptList({ setId, attempts }: { setId: string; attempts: Attempt[] }) {
   const latest = attempts.at(-1);
   if (!latest) return null;

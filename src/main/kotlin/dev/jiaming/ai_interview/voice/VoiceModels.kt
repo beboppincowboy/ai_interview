@@ -21,7 +21,7 @@ data class VoiceSessionView(
     val report: VoiceSessionReport? = null,
 )
 
-/** EXPIRED is an unsaved draft past its expiry; cleanup removes it. */
+/** Session lifecycle: EXPIRED applies to unsaved drafts past expiry; cleanup removes them. */
 enum class VoiceSessionStatus { DRAFT, EXPIRED, SAVED }
 
 /** A copy of one AI practice question taken when the run started; [id] is the practice question's ID. */
@@ -48,7 +48,7 @@ data class VoiceTokenResponse(
     val newSessionExpiresAt: Instant,
 )
 
-/** The report job's input. Its resource is the session; the transcript stays on the session row (R10). */
+/** Versioned report-job references; the job resource is the session and transcript remains on that session row. */
 @JvmRecord
 data class VoiceReportPayload(
     val payloadVersion: Int,

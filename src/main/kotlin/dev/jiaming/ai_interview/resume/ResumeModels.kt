@@ -7,15 +7,18 @@ import dev.jiaming.ai_interview.score.ResumeScoreResult
 import dev.jiaming.ai_interview.score.ResumeScoreSummary
 import org.springframework.boot.context.properties.ConfigurationProperties
 
+/** A failed extraction job associated with its resume and nullable error details. */
 @JvmRecord
 data class FailedResumeJob(val resumeId: UUID, val errorCode: String?, val errorMessage: String?)
 
+/** Storage object left for cleanup after failed resume processing. */
 @JvmRecord
 data class FailedResumeStorage(val resumeId: UUID, val storageKey: String)
 
 @JvmRecord
 data class ResumeChunkResponse(val index: Int, val section: String, val content: String, val characterCount: Int)
 
+/** Extraction-job input containing stored upload metadata; content type fields may be absent. */
 @JvmRecord
 data class ResumeExtractionJobPayload(
     val resumeId: UUID,
@@ -27,6 +30,7 @@ data class ResumeExtractionJobPayload(
     val extension: String
 )
 
+/** Parser queue/resource limits; nonpositive values fall back to documented defaults. */
 @ConfigurationProperties(prefix = "app.resume-extraction")
 class ResumeExtractionProperties(
     queueCapacity: Int,
@@ -53,6 +57,7 @@ data class ResumeFileContent(
     val extension: String
 )
 
+/** Resume origin: uploaded file or pasted text. */
 enum class ResumeSource { UPLOAD, PASTE }
 
 /** Contract `Resume.status`; the stored `PENDING` is reported as PROCESSING. */

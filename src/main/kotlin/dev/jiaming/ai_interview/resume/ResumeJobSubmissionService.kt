@@ -28,6 +28,7 @@ class ResumeJobSubmissionService(
     private val cleanupService: ResumeStorageCleanupService,
     private val transactionOperations: TransactionOperations
 ) {
+    /** Validates and stores an upload, starts extraction, and returns 202; existing/racing duplicates return 200. */
     fun submit(file: MultipartFile, requestedName: String?, requestedJobTitle: String?): ResponseEntity<ResumeCreated> {
         jobSubmissionService.assertApiAvailable()
         validator.validate(file)

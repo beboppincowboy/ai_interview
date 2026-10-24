@@ -3,6 +3,7 @@ package dev.jiaming.ai_interview.coach
 import dev.jiaming.ai_interview.document.ResolvedDocument
 import java.util.Optional
 
+/** Supplies a required resolved resume and optional target job; a null optional wrapper is normalized to empty. */
 class CoachAnalysisInput(
     private val resumeValue: ResolvedDocument,
     targetJobValue: Optional<ResolvedDocument>?

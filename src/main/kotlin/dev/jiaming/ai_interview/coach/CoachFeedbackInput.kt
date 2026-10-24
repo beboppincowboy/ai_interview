@@ -3,6 +3,7 @@ package dev.jiaming.ai_interview.coach
 import dev.jiaming.ai_interview.document.ResolvedDocument
 import java.util.Optional
 
+/** Scoring input; null target job becomes empty, expected signals are copied (null becomes empty), and incomplete capture defaults false. */
 class CoachFeedbackInput(
     private val resumeValue: ResolvedDocument,
     targetJobValue: Optional<ResolvedDocument>?,

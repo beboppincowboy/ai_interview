@@ -34,6 +34,7 @@ import { latestJob, jobState, type JobFailure, type MockJob } from "./jobSimulat
 
 export const STORAGE_KEY = "ai-interview:mock-db:v1";
 
+/** Mock HTTP response failure with status, API code, and message. */
 export class MockHttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
     super(message);
@@ -72,8 +73,11 @@ const emptyDb = (): Db => ({
 export type MockStoreOptions = {
   /** Browser: localStorage, so data survives reloads and is shared by tabs. Tests: omit for memory only. */
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  /** Clock used for timestamps and derived job state; defaults to Date.now. */
   now?: () => number;
+  /** Simulated queued duration; defaults to 400 ms. */
   queuedMs?: number;
+  /** Simulated duration per job stage; defaults to 1,200 ms. */
   stageMs?: number;
 };
 
@@ -94,6 +98,7 @@ function optionalText(value: unknown, field: string, max: number): string | null
   return requireText(value, field, 1, max);
 }
 
+/** Creates mock API data/actions; supplied browser storage persists it across reloads, otherwise each instance uses memory. */
 export function createMockStore(options: MockStoreOptions = {}) {
   const now = options.now ?? Date.now;
   const queuedMs = options.queuedMs ?? 400;
@@ -890,6 +895,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
   };
 }
 
+/** Mock API methods that mutate/read resources and simulate background-job effects. */
 export type MockStore = ReturnType<typeof createMockStore>;
 
 function newestFirst(a: { createdAt: string }, b: { createdAt: string }) {

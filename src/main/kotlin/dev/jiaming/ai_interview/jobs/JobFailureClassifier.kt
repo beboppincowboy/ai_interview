@@ -9,8 +9,10 @@ import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.resume.ResumeExtractionException
 import dev.jiaming.ai_interview.resume.ResumeParserBusyException
 
+/** Maps handler exceptions to stable job error codes and retry decisions. */
 @Component
 internal class JobFailureClassifier {
+    /** Preserves provider/request codes; retries busy parser, 408/429/5xx, and unexpected failures. */
     fun classify(throwable: Throwable): JobFailure {
         val cause = unwrap(throwable)
         return when (cause) {

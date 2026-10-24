@@ -27,6 +27,7 @@ class JobFitService(
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
 ) {
+    /** Reads owner-scoped pair state even when the resume is unready; result/time stay null until a result is saved, while latest job remains visible. */
     fun get(resumeId: UUID, targetJobId: UUID): FitView {
         val userId = localUserService.localUserId()
         requireOwnedInputs(userId, resumeId, targetJobId, lockRows = false, requireReady = false)
@@ -38,6 +39,7 @@ class JobFitService(
         return FitView(resumeId, targetJobId, row?.resultPayload?.let { objectMapper.readValue(it, JobFitResult::class.java) }, row?.resultCreatedAt, latestJob)
     }
 
+    /** Requires ready owned inputs, then starts or reuses a pair-scoped fit job. */
     fun run(resumeId: UUID, targetJobId: UUID): JobAcceptedResponse {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()

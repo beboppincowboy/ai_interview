@@ -11,6 +11,7 @@ import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobType
 import org.springframework.stereotype.Component
 
+/** Resolves the job's stored resume and target job, checkpoints fit analysis, then materializes it. */
 @Component
 class JobFitJobHandler(
     private val coachService: AiResumeCoachService,

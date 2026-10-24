@@ -35,6 +35,7 @@ class ResumeLibraryService(
     private val objectMapper: ObjectMapper,
     private val backgroundJobStore: BackgroundJobStore
 ) {
+    /** Lists owner-scoped resumes newest first with current score and newest background job. */
     fun list(): ResumePage {
         val userId = localUserService.localUserId()
         val items = jdbcTemplate.query(
@@ -45,6 +46,7 @@ class ResumeLibraryService(
         return ResumePage(items.map { it.copy(latestJob = jobs[UUID.fromString(it.id)]?.let(LatestJob::from)) })
     }
 
+    /** Returns owner-scoped detail, including text only when ready, or 404. */
     fun get(resumeId: UUID): ResumeLibraryDetail {
         val userId = localUserService.localUserId()
         return jdbcTemplate.query(
@@ -53,6 +55,7 @@ class ResumeLibraryService(
         ).firstOrNull()?.copy(latestJob = latestJob(userId, resumeId)) ?: notFound()
     }
 
+    /** Finds the newest owner-scoped upload with this file hash and attaches its newest job. */
     fun findByFileHash(fileHash: String): ResumeLibraryItem? {
         val userId = localUserService.localUserId()
         return jdbcTemplate.query(
@@ -61,6 +64,7 @@ class ResumeLibraryService(
         ).firstOrNull()?.run { copy(latestJob = latestJob(userId, UUID.fromString(id))) }
     }
 
+    /** Persists pasted text directly as READY; it does not start extraction or scoring jobs. */
     fun paste(request: PasteResumeRequest): ResponseEntity<ResumeCreated> {
         val name = RequestValidation.text("name", request.name, 1, 80)
         val jobTitle = request.jobTitle?.let { RequestValidation.text("jobTitle", it, 0, 100).ifEmpty { null } }
@@ -79,6 +83,7 @@ class ResumeLibraryService(
         }
     }
 
+    /** Updates only `name` and `jobTitle`; omitted values stay unchanged and null/blank jobTitle clears it. */
     fun patch(resumeId: UUID, fields: Map<String, Any?>): ResumeLibraryItem = patch(resumeId, objectMapper.valueToTree<JsonNode>(fields))
 
     private fun patch(resumeId: UUID, body: JsonNode): ResumeLibraryItem {
@@ -119,8 +124,10 @@ class ResumeLibraryService(
         return getItem(updated)
     }
 
+    /** Returns downstream deletion counts for an owned resume. */
     fun deleteImpact(resumeId: UUID) = deleteImpactService.forResume(localUserService.localUserId(), resumeId)
 
+    /** Deletes owner-scoped data and related jobs, then schedules stored-file cleanup. */
     fun delete(resumeId: UUID) {
         val userId = localUserService.localUserId()
         val storageKey = transactionOperations.execute {
