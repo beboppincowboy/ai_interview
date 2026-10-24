@@ -87,13 +87,13 @@ app:
     default-top-k: ${RAG_DEFAULT_TOP_K:8}
     resume-candidate-top-k: ${RAG_RESUME_CANDIDATE_TOP_K:6}
     job-description-candidate-top-k: ${RAG_JOB_DESCRIPTION_CANDIDATE_TOP_K:4}
-    assessment-context-budget: ${RAG_ASSESSMENT_CONTEXT_BUDGET:14}
-    question-context-budget: ${RAG_QUESTION_CONTEXT_BUDGET:16}
-    feedback-context-budget: ${RAG_FEEDBACK_CONTEXT_BUDGET:10}
-    assessment-job-description-minimum: ${RAG_ASSESSMENT_JD_MINIMUM:3}
-    question-job-description-minimum: ${RAG_QUESTION_JD_MINIMUM:3}
-    feedback-job-description-minimum: ${RAG_FEEDBACK_JD_MINIMUM:2}
-    section-maximum: ${RAG_SECTION_MAXIMUM:3}
+    assessment-max-snippets: ${RAG_ASSESSMENT_MAX_SNIPPETS:14}
+    question-max-snippets: ${RAG_QUESTION_MAX_SNIPPETS:16}
+    feedback-max-snippets: ${RAG_FEEDBACK_MAX_SNIPPETS:10}
+    assessment-min-job-description-snippets: ${RAG_ASSESSMENT_MIN_JD_SNIPPETS:3}
+    question-min-job-description-snippets: ${RAG_QUESTION_MIN_JD_SNIPPETS:3}
+    feedback-min-job-description-snippets: ${RAG_FEEDBACK_MIN_JD_SNIPPETS:2}
+    max-snippets-per-section: ${RAG_MAX_SNIPPETS_PER_SECTION:3}
     rrf-k: ${RAG_RRF_K:15}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
     chunk-schema: ${RAG_CHUNK_SCHEMA:section-block-v3}

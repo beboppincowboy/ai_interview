@@ -9,13 +9,13 @@ class RagProperties @ConstructorBinding constructor(
     defaultTopK: Int,
     resumeCandidateTopK: Int,
     jobDescriptionCandidateTopK: Int,
-    assessmentContextBudget: Int,
-    questionContextBudget: Int,
-    feedbackContextBudget: Int,
-    assessmentJobDescriptionMinimum: Int,
-    questionJobDescriptionMinimum: Int,
-    feedbackJobDescriptionMinimum: Int,
-    sectionMaximum: Int,
+    assessmentMaxSnippets: Int,
+    questionMaxSnippets: Int,
+    feedbackMaxSnippets: Int,
+    assessmentMinJobDescriptionSnippets: Int,
+    questionMinJobDescriptionSnippets: Int,
+    feedbackMinJobDescriptionSnippets: Int,
+    maxSnippetsPerSection: Int,
     rrfK: Int,
     embeddingModel: String?,
     chunkSchema: String?
@@ -24,13 +24,13 @@ class RagProperties @ConstructorBinding constructor(
     private val topK = defaultTopK.takeIf { it > 0 } ?: 8
     private val resumeTopK = resumeCandidateTopK.takeIf { it > 0 } ?: 6
     private val jdTopK = jobDescriptionCandidateTopK.takeIf { it > 0 } ?: 4
-    private val assessmentBudget = assessmentContextBudget.takeIf { it > 0 } ?: 14
-    private val questionBudget = questionContextBudget.takeIf { it > 0 } ?: 16
-    private val feedbackBudget = feedbackContextBudget.takeIf { it > 0 } ?: 10
-    private val assessmentJdMinimum = assessmentJobDescriptionMinimum.coerceAtLeast(0)
-    private val questionJdMinimum = questionJobDescriptionMinimum.coerceAtLeast(0)
-    private val feedbackJdMinimum = feedbackJobDescriptionMinimum.coerceAtLeast(0)
-    private val maxSection = sectionMaximum.takeIf { it > 0 } ?: 3
+    private val assessmentBudget = assessmentMaxSnippets.takeIf { it > 0 } ?: 14
+    private val questionBudget = questionMaxSnippets.takeIf { it > 0 } ?: 16
+    private val feedbackBudget = feedbackMaxSnippets.takeIf { it > 0 } ?: 10
+    private val assessmentJdMinimum = assessmentMinJobDescriptionSnippets.coerceAtLeast(0)
+    private val questionJdMinimum = questionMinJobDescriptionSnippets.coerceAtLeast(0)
+    private val feedbackJdMinimum = feedbackMinJobDescriptionSnippets.coerceAtLeast(0)
+    private val maxSection = maxSnippetsPerSection.takeIf { it > 0 } ?: 3
     private val reciprocalRankK = rrfK.takeIf { it > 0 } ?: 15
     private val model = embeddingModel?.takeIf { it.isNotBlank() }?.trim() ?: "gemini-embedding-001"
     private val schema = chunkSchema?.takeIf { it.isNotBlank() }?.trim() ?: "section-block-v3"
@@ -42,13 +42,13 @@ class RagProperties @ConstructorBinding constructor(
     fun defaultTopK() = topK
     fun resumeCandidateTopK() = resumeTopK
     fun jobDescriptionCandidateTopK() = jdTopK
-    fun assessmentContextBudget() = assessmentBudget
-    fun questionContextBudget() = questionBudget
-    fun feedbackContextBudget() = feedbackBudget
-    fun assessmentJobDescriptionMinimum() = assessmentJdMinimum
-    fun questionJobDescriptionMinimum() = questionJdMinimum
-    fun feedbackJobDescriptionMinimum() = feedbackJdMinimum
-    fun sectionMaximum() = maxSection
+    fun assessmentMaxSnippets() = assessmentBudget
+    fun questionMaxSnippets() = questionBudget
+    fun feedbackMaxSnippets() = feedbackBudget
+    fun assessmentMinJobDescriptionSnippets() = assessmentJdMinimum
+    fun questionMinJobDescriptionSnippets() = questionJdMinimum
+    fun feedbackMinJobDescriptionSnippets() = feedbackJdMinimum
+    fun maxSnippetsPerSection() = maxSection
     fun rrfK() = reciprocalRankK
     fun embeddingModel() = model
     fun chunkSchema() = schema

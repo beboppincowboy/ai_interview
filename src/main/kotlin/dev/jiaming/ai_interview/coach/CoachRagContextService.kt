@@ -27,18 +27,21 @@ class CoachRagContextService @Autowired constructor(
         retrievalService: RagRetrievalService, meterRegistry: MeterRegistry) :
         this(chunker, indexingService, retrievalService, meterRegistry, RagProperties(1024, 8, "gemini-embedding-001", "section-block-v3"))
 
+    /** Job-fit context: at most [RagProperties.assessmentMaxSnippets] retrieved snippets. Resume + target job text totalling at most 6,000 chars is sent whole with no retrieval or budget (vectorBacked=false); RAG failures fall back to local chunks, never throw. */
     fun jobFitContext(input: CoachAnalysisInput) = ragContext(input.resume(), input.targetJob(), jobFitQueries(input),
-        SelectionProfile("job-fit", properties.assessmentContextBudget(), properties.assessmentJobDescriptionMinimum()))
+        SelectionProfile("job-fit", properties.assessmentMaxSnippets(), properties.assessmentMinJobDescriptionSnippets()))
+    /** Practice-question context: at most [RagProperties.questionMaxSnippets] retrieved snippets. Resume + target job text totalling at most 6,000 chars is sent whole with no retrieval or budget (vectorBacked=false); RAG failures fall back to local chunks, never throw. */
     fun practiceQuestionContext(input: CoachAnalysisInput) = ragContext(input.resume(), input.targetJob(), questionQueries(input),
-        SelectionProfile("practice-questions", properties.questionContextBudget(), properties.questionJobDescriptionMinimum()))
+        SelectionProfile("practice-questions", properties.questionMaxSnippets(), properties.questionMinJobDescriptionSnippets()))
+    /** Feedback context: at most [RagProperties.feedbackMaxSnippets] retrieved snippets. Resume + target job text totalling at most 6,000 chars is sent whole with no retrieval or budget (vectorBacked=false); RAG failures fall back to local chunks, never throw. */
     fun feedbackContext(input: CoachFeedbackInput) = ragContext(input.resume(), input.targetJob(), feedbackQueries(input),
-        SelectionProfile("feedback", properties.feedbackContextBudget(), properties.feedbackJobDescriptionMinimum()))
+        SelectionProfile("feedback", properties.feedbackMaxSnippets(), properties.feedbackMinJobDescriptionSnippets()))
 
-    /** The resume text to send for suggestions: whole within DIRECT_CONTEXT_LIMIT chars, otherwise the snippets retrieval finds for [targetJob]. */
+    /** The resume text to send for suggestions: whole within 6,000 chars (no retrieval or budget), otherwise at most [RagProperties.assessmentMaxSnippets] snippets retrieval finds for [targetJob]. */
     fun suggestionSourceText(resume: ResolvedDocument, targetJob: ResolvedDocument): String =
         if (safe(resume.normalizedText()).length <= DIRECT_CONTEXT_LIMIT) resume.normalizedText()
         else ragContext(resume, Optional.empty(), suggestionQueries(targetJob),
-            SelectionProfile("suggestions", properties.assessmentContextBudget(), 0)).context
+            SelectionProfile("suggestions", properties.assessmentMaxSnippets(), 0)).context
 
     private fun ragContext(resume: ResolvedDocument, targetJob: Optional<ResolvedDocument>, queries: List<String>, profile: SelectionProfile): CoachRagContext {
         val documents = mutableListOf(resume)
@@ -108,7 +111,7 @@ class CoachRagContextService @Autowired constructor(
     }
 
     private fun sectionLimitReached(selected: List<Candidate>, candidate: Candidate) =
-        selected.count { it.sourceType == candidate.sourceType && it.section == candidate.section } >= properties.sectionMaximum()
+        selected.count { it.sourceType == candidate.sourceType && it.section == candidate.section } >= properties.maxSnippetsPerSection()
     private fun nearDuplicate(selected: List<Candidate>, candidate: Candidate) = selected.any {
         it.sourceType == candidate.sourceType && it.section == candidate.section && kotlin.math.abs(it.chunkIndex - candidate.chunkIndex) <= 1 &&
             overlappingBoundary(safe(it.snippet.content), safe(candidate.snippet.content))
