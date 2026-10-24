@@ -580,7 +580,7 @@ class VoiceSessionIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
             )
-            voice = VoiceSessionService(jdbc, local, submissions, guard, mapper, transactions)
+            voice = VoiceSessionService(jdbc, local, submissions, mapper, transactions)
             val normalizer = ResumeTextNormalizer()
             library = ResumeLibraryService(
                 jdbc, local, ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher()), normalizer, guard, transactions,

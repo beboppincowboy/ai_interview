@@ -3,7 +3,6 @@ package dev.jiaming.ai_interview.practice
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
 import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.AttemptFeedbackPayload
@@ -24,7 +23,6 @@ class PracticeService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val backgroundJobStore: BackgroundJobStore,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
@@ -195,24 +193,20 @@ class PracticeService(
     ).firstOrNull()
 
     private fun startGeneration(set: SetRow) {
-        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-        jobSubmissionService.createOrReuse(
+        jobSubmissionService.submit(
             JobType.PRACTICE_QUESTIONS,
             RESOURCE,
             set.id,
             PracticeQuestionsPayload(set.id, set.resumeId, set.targetJobId),
-            jobSubmissionService.fingerprint(JobType.PRACTICE_QUESTIONS.name, set.id),
         )
     }
 
     private fun startFeedback(attemptId: UUID, question: QuestionRow) {
-        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-        jobSubmissionService.createOrReuse(
+        jobSubmissionService.submit(
             JobType.ANSWER_FEEDBACK,
             AttemptFeedbackPayload.RESOURCE,
             attemptId,
             AttemptFeedbackPayload(attemptId, question.setId, question.resumeId, question.targetJobId),
-            jobSubmissionService.fingerprint(JobType.ANSWER_FEEDBACK.name, attemptId),
         )
     }
 

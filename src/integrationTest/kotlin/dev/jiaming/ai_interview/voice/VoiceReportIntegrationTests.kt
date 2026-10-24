@@ -467,7 +467,7 @@ class VoiceReportIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 properties, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper,
             )
-            voice = VoiceSessionService(jdbc, local, submission, guard, mapper, transactions)
+            voice = VoiceSessionService(jdbc, local, submission, mapper, transactions)
             context = AnnotationConfigApplicationContext(VoiceReportTestConfiguration::class.java)
             materialization = context.getBean(JobEffectMaterializationService::class.java)
             assertThat(JobEffectMaterializationService::class.java.isAssignableFrom(materialization.javaClass)).isTrue()

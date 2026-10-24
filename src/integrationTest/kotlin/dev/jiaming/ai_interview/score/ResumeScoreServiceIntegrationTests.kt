@@ -34,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -62,7 +63,7 @@ class ResumeScoreServiceIntegrationTests {
 
         assertThat(response?.jobType).isEqualTo(JobType.RESUME_SCORE)
         val payload = argumentCaptor<ResumeScorePayload>()
-        Mockito.verify(jobSubmission).submit(eq(JobType.RESUME_SCORE), eq("resume"), eq(resumeId), payload.capture())
+        Mockito.verify(jobSubmission).submit(eq(JobType.RESUME_SCORE), eq("resume"), eq(resumeId), payload.capture(), anyOrNull(), anyOrNull())
         assertThat(payload.firstValue).isEqualTo(ResumeScorePayload(resumeId, "Built a payment API serving 20 services.", "Backend Engineer"))
     }
 
@@ -134,7 +135,7 @@ class ResumeScoreServiceIntegrationTests {
         val resumeId = insertResume("READY", null, "Built a payment API.")
         val insideSubmit = CountDownLatch(1)
         val releaseSubmit = CountDownLatch(1)
-        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any())).thenAnswer {
+        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any(), anyOrNull(), anyOrNull())).thenAnswer {
             insideSubmit.countDown()
             releaseSubmit.await(10, TimeUnit.SECONDS)
             null
@@ -213,7 +214,7 @@ class ResumeScoreServiceIntegrationTests {
     @BeforeEach fun reset() {
         jdbc.execute("TRUNCATE TABLE ai_interview_app.resume_scores, ai_interview_app.background_job_effects, ai_interview_app.background_jobs, ai_interview_app.resume_chunks, ai_interview_app.resumes, ai_interview_app.app_users CASCADE")
         Mockito.reset(jobSubmission)
-        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any())).thenAnswer { invocation ->
+        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any(), anyOrNull(), anyOrNull())).thenAnswer { invocation ->
             val jobId = UUID.randomUUID()
             JobAcceptedResponse(jobId, JobType.RESUME_SCORE, JobStatus.QUEUED, JobStage.QUEUED, "/api/jobs/$jobId", false,
                 JobInputRefs(invocation.getArgument(2), null, null, null))

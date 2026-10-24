@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RequestValidation
 import dev.jiaming.ai_interview.common.lockOwnerShared
 import dev.jiaming.ai_interview.common.sha256Hex
@@ -31,7 +30,6 @@ class VoiceSessionService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
 ) {
@@ -145,11 +143,9 @@ class VoiceSessionService(
                 session.view.status == VoiceSessionStatus.EXPIRED ->
                     throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_SESSION_EXPIRED", "The interview draft expired before it was saved")
                 else -> {
-                    requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-                    val job = jobSubmissionService.createOrReuse(
+                    val job = jobSubmissionService.submit(
                         JobType.VOICE_REPORT, VoiceReportPayload.RESOURCE, sessionId,
                         VoiceReportPayload(sessionId, session.view.resumeId, session.view.targetJobId),
-                        jobSubmissionService.fingerprint(JobType.VOICE_REPORT.name, sessionId),
                     )
                     jdbcTemplate.update(
                         """
@@ -189,15 +185,12 @@ class VoiceSessionService(
             if (payload.payloadVersion != VoiceReportPayload.CURRENT_VERSION || payload.voiceSessionId != sessionId ||
                 payload.resumeId != current.view.resumeId || payload.targetJobId != current.view.targetJobId) notRetryable()
 
-            requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-            val checkpoints = transferableCheckpoints(current.view, oldJob.resultPayload)
-            val replacement = jobSubmissionService.createOrReuseWithInitialResult(
+            val replacement = jobSubmissionService.submit(
                 JobType.VOICE_REPORT,
                 VoiceReportPayload.RESOURCE,
                 sessionId,
                 VoiceReportPayload(sessionId, current.view.resumeId, current.view.targetJobId),
-                jobSubmissionService.fingerprint(JobType.VOICE_REPORT.name, sessionId),
-                checkpoints,
+                initialResult = transferableCheckpoints(current.view, oldJob.resultPayload),
             )
             val updated = jdbcTemplate.update(
                 "UPDATE ai_interview_app.voice_sessions SET report = NULL, report_job_id = ? WHERE id = ? AND user_id = ? AND saved_at IS NOT NULL AND submission_job_id = ? AND report_job_id = ?",

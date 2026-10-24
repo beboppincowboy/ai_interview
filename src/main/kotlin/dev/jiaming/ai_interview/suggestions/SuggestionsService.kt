@@ -3,7 +3,6 @@ package dev.jiaming.ai_interview.suggestions
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
 import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
@@ -26,7 +25,6 @@ class SuggestionsService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val backgroundJobStore: BackgroundJobStore,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
@@ -69,16 +67,14 @@ class SuggestionsService(
                     val suggestionsId = upsertAndLockSuggestions(userId, resumeId, targetJobId)
                     val fingerprint = jobSubmissionService.fingerprint(JobType.EXPERIENCE_SUGGESTIONS.name, suggestionsId)
                     val reusable = jobSubmissionService.findReusable(JobType.EXPERIENCE_SUGGESTIONS, fingerprint)
-                    if (reusable.isPresent) reusable.get() else {
-                        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-                        jobSubmissionService.createOrReuse(
-                            JobType.EXPERIENCE_SUGGESTIONS,
-                            RESOURCE,
-                            suggestionsId,
-                            ExperienceSuggestionsPayload(suggestionsId, resumeId, targetJobId),
-                            fingerprint,
-                        )
-                    }
+                    // Checked first so that rerunning active suggestions is not charged to the AI rate limit.
+                    if (reusable.isPresent) reusable.get() else jobSubmissionService.submit(
+                        JobType.EXPERIENCE_SUGGESTIONS,
+                        RESOURCE,
+                        suggestionsId,
+                        ExperienceSuggestionsPayload(suggestionsId, resumeId, targetJobId),
+                        dedupKey = fingerprint,
+                    )
                 })
             },
         )

@@ -21,27 +21,44 @@ class JobSubmissionService(
     private val requestGuard: RedisRequestGuard, private val properties: JobProperties,
     private val runtimeMode: RuntimeModeProperties, private val metrics: JobMetrics, private val objectMapper: ObjectMapper
 ) {
-    fun submit(type: JobType, resourceType: String?, resourceId: UUID?, payload: Any): JobAcceptedResponse {
+    /**
+     * The only way to submit a background job. It always checks, in this order and before any write:
+     * [assertApiAvailable] (503 in worker-only mode), then the shared AI rate limit
+     * ([RedisRequestGuard.assertAiAllowed] with [AI_JOB_ACTION], 429 when exceeded; [JobType.RESUME_EXTRACTION] is
+     * exempt because uploads have their own limit). The rate limit is charged even when an active job is reused.
+     *
+     * Then it returns the user's active (QUEUED/PROCESSING/RETRYING) job of [type] with the same [dedupKey] with
+     * `reused = true`, or creates one and dispatches it after the surrounding transaction commits (at once if there is
+     * none). Call it inside the caller's transaction when the job must commit with other writes.
+     *
+     * @param dedupKey defaults to a fingerprint of [type] and [resourceId] only, so a resubmit with a changed [payload]
+     *   gets the old active job back. A null [resourceId] makes the default null, and a null key never reuses.
+     *   Pass another key (from [fingerprint]) to dedupe on something else.
+     * @param initialResult the job's starting result checkpoint, e.g. completed work carried over from a failed job.
+     */
+    fun submit(
+        type: JobType,
+        resourceType: String?,
+        resourceId: UUID?,
+        payload: Any,
+        dedupKey: String? = resourceId?.let { fingerprint(type.name, it) },
+        initialResult: JsonNode? = null,
+    ): JobAcceptedResponse {
         assertApiAvailable()
         if (type != JobType.RESUME_EXTRACTION) requestGuard.assertAiAllowed(AI_JOB_ACTION)
-        return createOrReuse(type, resourceType, resourceId, payload, resourceId?.let { fingerprint(type.name, it) })
+        return createOrReuse(type, resourceType, resourceId, payload, dedupKey, initialResult)
     }
     fun fingerprint(action: String, source: Any): String = fingerprintService.fingerprint(action, source)
+    /** Throws 503 when this process runs in worker-only mode; [submit] calls it too, so calling it first only fails fast. */
     fun assertApiAvailable() {
         if (!properties.enabled || !runtimeMode.apiEnabled()) throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
             "This process is running in worker-only mode and does not accept background jobs")
     }
+    /** The user's active job of [type] with this dedup key, if any; a read only, it submits nothing. */
     fun findReusable(type: JobType, fingerprint: String?): Optional<JobAcceptedResponse> = if (fingerprint == null) Optional.empty()
         else jobStore.findReusable(localUserService.localUserId(), type, fingerprint).map { JobAcceptedResponse.from(it, true) }
-    fun createOrReuse(
-        type: JobType,
-        resourceType: String?,
-        resourceId: UUID?,
-        requestPayload: Any,
-        fingerprint: String?,
-    ): JobAcceptedResponse = createOrReuseWithInitialResult(type, resourceType, resourceId, requestPayload, fingerprint, null)
 
-    fun createOrReuseWithInitialResult(
+    private fun createOrReuse(
         type: JobType,
         resourceType: String?,
         resourceId: UUID?,
@@ -63,6 +80,7 @@ class JobSubmissionService(
         dispatchAfterCommit(job.id)
         return JobAcceptedResponse.from(job, false)
     }
+    /** See [RedisRequestGuard.withIdempotentRetryCache]: acts only when the request has an `Idempotency-Key` header. */
     fun <T> withIdempotency(action: String, fingerprintSource: Any, type: Class<T>, work: java.util.function.Supplier<T>): T =
         requestGuard.withIdempotentRetryCache(action, fingerprintSource, type, work)
     private fun dispatchAfterCommit(jobId: UUID) {

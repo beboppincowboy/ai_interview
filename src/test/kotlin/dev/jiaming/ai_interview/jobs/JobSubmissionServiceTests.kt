@@ -14,6 +14,7 @@ import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.Mockito
 import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.http.HttpStatus
 import org.springframework.data.redis.core.ValueOperations
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
@@ -51,8 +52,8 @@ class JobSubmissionServiceTests {
         Mockito.`when`(jobStore.findReusable(userId, JobType.RESUME_SCORE, "same"))
             .thenReturn(Optional.of(existing))
 
-        val response = service.createOrReuse(
-            JobType.RESUME_SCORE, "resume", null, mapOf("resume" to "same"), "same"
+        val response = service.submit(
+            JobType.RESUME_SCORE, "resume", null, mapOf("resume" to "same"), dedupKey = "same"
         )
 
         assertThat(response.reused).isTrue()
@@ -70,8 +71,8 @@ class JobSubmissionServiceTests {
             jobStore.createIfAbsentWithInitialResult(eq(userId), eq(JobType.RESUME_SCORE), eq("resume"), eq(null), any(), eq("new"), eq(3), eq(null))
         ).thenReturn(Optional.of(created))
 
-        val response = service.createOrReuse(
-            JobType.RESUME_SCORE, "resume", null, mapOf("resume" to "new"), "new"
+        val response = service.submit(
+            JobType.RESUME_SCORE, "resume", null, mapOf("resume" to "new"), dedupKey = "new"
         )
 
         assertThat(response.reused).isFalse()
@@ -91,8 +92,8 @@ class JobSubmissionServiceTests {
             )
         ).thenReturn(Optional.empty())
 
-        val response = service.createOrReuse(
-            JobType.RESUME_SCORE, "resume", null, mapOf("resume" to "same"), "race"
+        val response = service.submit(
+            JobType.RESUME_SCORE, "resume", null, mapOf("resume" to "same"), dedupKey = "race"
         )
 
         assertThat(response.reused).isTrue()
@@ -140,6 +141,70 @@ class JobSubmissionServiceTests {
         assertThat(fingerprints.allValues[0]).isNotNull().isEqualTo(fingerprints.allValues[1])
         assertThat(fingerprints.allValues[2]).isNull()
         Mockito.verify(requestGuard, Mockito.times(3)).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
+    }
+
+    @Test
+    fun everySubmissionPathChecksTheRateLimitBeforeTouchingTheStore() {
+        Mockito.doThrow(ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS)).`when`(requestGuard).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
+        val resourceId = UUID.randomUUID()
+
+        assertThatThrownBy { service.submit(JobType.RESUME_SCORE, "resume", resourceId, mapOf("n" to 1)) }
+            .hasMessageContaining("429 TOO_MANY_REQUESTS")
+        assertThatThrownBy { service.submit(JobType.JOB_FIT, "job-fit", resourceId, mapOf("n" to 2), dedupKey = "explicit") }
+            .hasMessageContaining("429 TOO_MANY_REQUESTS")
+        assertThatThrownBy {
+            service.submit(JobType.VOICE_REPORT, "voice-session", resourceId, mapOf("n" to 3), initialResult = ObjectMapper().createObjectNode())
+        }.hasMessageContaining("429 TOO_MANY_REQUESTS")
+
+        Mockito.verify(requestGuard, Mockito.times(3)).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
+        Mockito.verifyNoInteractions(jobStore, dispatcher)
+    }
+
+    @Test
+    fun everySubmissionPathRefusesWorkerOnlyProcessesBeforeTheRateLimit() {
+        val workerOnly = JobSubmissionService(jobStore, dispatcher, RequestFingerprintService(ObjectMapper()), localUserService,
+            requestGuard, properties, RuntimeModeProperties("worker"), metrics, ObjectMapper())
+
+        assertThatThrownBy { workerOnly.submit(JobType.RESUME_SCORE, "resume", UUID.randomUUID(), mapOf("n" to 1)) }
+            .hasMessageContaining("503 SERVICE_UNAVAILABLE")
+        assertThatThrownBy {
+            workerOnly.submit(JobType.JOB_FIT, "job-fit", null, mapOf("n" to 2), dedupKey = "explicit", initialResult = ObjectMapper().createObjectNode())
+        }.hasMessageContaining("503 SERVICE_UNAVAILABLE")
+
+        Mockito.verifyNoInteractions(requestGuard, jobStore, dispatcher)
+    }
+
+    @Test
+    fun initialResultReachesTheStoreAfterTheRateLimit() {
+        val created = job(JobStatus.QUEUED)
+        val checkpoint = ObjectMapper().createObjectNode().put("answered", 1)
+        Mockito.`when`(localUserService.localUserId()).thenReturn(userId)
+        Mockito.`when`(jobStore.findReusable(userId, JobType.VOICE_REPORT, "voice")).thenReturn(Optional.empty())
+        Mockito.`when`(
+            jobStore.createIfAbsentWithInitialResult(eq(userId), eq(JobType.VOICE_REPORT), eq("voice-session"), anyOrNull(), any(), eq("voice"), eq(3), eq(checkpoint))
+        ).thenReturn(Optional.of(created))
+
+        val response = service.submit(
+            JobType.VOICE_REPORT, "voice-session", UUID.randomUUID(), mapOf("n" to 1), dedupKey = "voice", initialResult = checkpoint
+        )
+
+        assertThat(response.jobId).isEqualTo(created.id)
+        val order = Mockito.inOrder(requestGuard, jobStore)
+        order.verify(requestGuard).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
+        order.verify(jobStore).createIfAbsentWithInitialResult(
+            eq(userId), eq(JobType.VOICE_REPORT), eq("voice-session"), anyOrNull(), any(), eq("voice"), eq(3), eq(checkpoint)
+        )
+    }
+
+    @Test
+    fun resumeExtractionIsNotChargedToTheAiRateLimit() {
+        Mockito.`when`(localUserService.localUserId()).thenReturn(userId)
+        Mockito.`when`(jobStore.createIfAbsentWithInitialResult(eq(userId), any(), anyOrNull(), anyOrNull(), any(), anyOrNull(), eq(3), eq(null)))
+            .thenAnswer { Optional.of(job(JobStatus.QUEUED)) }
+
+        service.submit(JobType.RESUME_EXTRACTION, "resume", UUID.randomUUID(), mapOf("n" to 1), dedupKey = "upload")
+
+        Mockito.verifyNoInteractions(requestGuard)
     }
 
     private fun job(status: JobStatus): BackgroundJob {

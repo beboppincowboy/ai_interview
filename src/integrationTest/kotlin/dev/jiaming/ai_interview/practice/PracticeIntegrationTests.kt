@@ -336,7 +336,7 @@ class PracticeIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
             )
-            practice = PracticeService(jdbc, local, submissions, guard, jobs, mapper, transactions)
+            practice = PracticeService(jdbc, local, submissions, jobs, mapper, transactions)
             controller = PracticeController(practice, guard)
             val normalizer = ResumeTextNormalizer()
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())

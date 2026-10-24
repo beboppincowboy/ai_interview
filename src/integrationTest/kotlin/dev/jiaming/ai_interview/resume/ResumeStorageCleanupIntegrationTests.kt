@@ -111,8 +111,8 @@ class ResumeStorageCleanupIntegrationTests {
             val replay = service.submit(file, "A different name", null)
             assertThat(replay.statusCode.value()).isEqualTo(200)
             Mockito.verify(storage, Mockito.times(2)).store(any())
-            Mockito.verify(jobs, Mockito.times(1)).createOrReuse(
-                eq(JobType.RESUME_EXTRACTION), eq("resume"), anyOrNull(), any(), eq("file-fingerprint")
+            Mockito.verify(jobs, Mockito.times(1)).submit(
+                eq(JobType.RESUME_EXTRACTION), eq("resume"), anyOrNull(), any(), eq("file-fingerprint"), anyOrNull()
             )
         } finally {
             executor.shutdownNow()
@@ -136,8 +136,8 @@ class ResumeStorageCleanupIntegrationTests {
     private fun mockedJobSubmission(createJob: (org.mockito.invocation.InvocationOnMock) -> JobAcceptedResponse): JobSubmissionService {
         val service = Mockito.mock(JobSubmissionService::class.java)
         Mockito.`when`(service.fingerprint(Mockito.anyString(), any())).thenReturn("file-fingerprint")
-        Mockito.doAnswer { createJob(it) }.`when`(service).createOrReuse(
-            eq(JobType.RESUME_EXTRACTION), eq("resume"), anyOrNull(), any(), eq("file-fingerprint")
+        Mockito.doAnswer { createJob(it) }.`when`(service).submit(
+            eq(JobType.RESUME_EXTRACTION), eq("resume"), anyOrNull(), any(), eq("file-fingerprint"), anyOrNull()
         )
         return service
     }

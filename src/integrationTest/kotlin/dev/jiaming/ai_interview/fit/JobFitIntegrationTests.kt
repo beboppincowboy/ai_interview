@@ -193,7 +193,7 @@ class JobFitIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
             )
-            fits = JobFitService(jdbc, local, submissions, guard, jobs, mapper, transactions)
+            fits = JobFitService(jdbc, local, submissions, jobs, mapper, transactions)
             val normalizer = ResumeTextNormalizer()
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())
             library = ResumeLibraryService(

@@ -127,7 +127,7 @@ class LegacyFlowRemovalIntegrationTests {
             jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(MAPPER), local, guard,
             PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), MAPPER
         )
-        return PracticeService(jdbc, local, submissions, guard, jobs, MAPPER, TransactionTemplate(DataSourceTransactionManager(source)))
+        return PracticeService(jdbc, local, submissions, jobs, MAPPER, TransactionTemplate(DataSourceTransactionManager(source)))
     }
 
     private fun insert(jdbc: JdbcTemplate, sql: String, vararg arguments: Any): UUID =

@@ -360,7 +360,7 @@ class SuggestionsIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
             )
-            suggestions = SuggestionsService(jdbc, local, submissions, guard, jobs, mapper, transactions, persistence)
+            suggestions = SuggestionsService(jdbc, local, submissions, jobs, mapper, transactions, persistence)
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
                 ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)

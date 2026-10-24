@@ -3,7 +3,6 @@ package dev.jiaming.ai_interview.fit
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
 import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
@@ -24,7 +23,6 @@ class JobFitService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val backgroundJobStore: BackgroundJobStore,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
@@ -54,16 +52,14 @@ class JobFitService(
                     val fitId = upsertAndLockFit(userId, resumeId, targetJobId)
                     val fingerprint = jobSubmissionService.fingerprint(JobType.JOB_FIT.name, fitId)
                     val reusable = jobSubmissionService.findReusable(JobType.JOB_FIT, fingerprint)
-                    if (reusable.isPresent) reusable.get() else {
-                        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-                        jobSubmissionService.createOrReuse(
-                            JobType.JOB_FIT,
-                            FIT_RESOURCE,
-                            fitId,
-                            JobFitPayload(fitId, resumeId, targetJobId),
-                            fingerprint,
-                        )
-                    }
+                    // Checked first so that rerunning an active fit is not charged to the AI rate limit.
+                    if (reusable.isPresent) reusable.get() else jobSubmissionService.submit(
+                        JobType.JOB_FIT,
+                        FIT_RESOURCE,
+                        fitId,
+                        JobFitPayload(fitId, resumeId, targetJobId),
+                        dedupKey = fingerprint,
+                    )
                 })
             },
         )
