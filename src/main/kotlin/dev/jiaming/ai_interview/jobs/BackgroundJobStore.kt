@@ -130,7 +130,7 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             enqueued_at = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = now()
         WHERE id = ? AND status = 'PROCESSING' AND lease_token = ?
         """, jobId, leaseToken) == 1
-    /** Requeues an eligible non-exhausted DLQ job for the dispatcher; false means ineligible, terminal, or still leased. */
+    /** Requeues an eligible, non-exhausted job on the dead-letter queue for the dispatcher; false means ineligible, terminal, or still leased. */
     fun prepareDlqRecovery(jobId: UUID): Boolean = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET status = CASE WHEN status = 'PROCESSING' THEN 'RETRYING' ELSE status END,
             run_after = now(), enqueued_at = NULL,
@@ -138,7 +138,7 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             lease_expires_at = CASE WHEN status = 'PROCESSING' THEN NULL ELSE lease_expires_at END, updated_at = now()
         WHERE id = ? AND attempts < max_attempts AND (status IN ('QUEUED', 'RETRYING') OR (status = 'PROCESSING' AND lease_expires_at < now()))
         """, jobId) == 1
-    /** Marks an eligible exhausted DLQ job failed with `RETRIES_EXHAUSTED_DLQ`; false means ineligible or still leased. */
+    /** Marks an eligible exhausted job on the dead-letter queue failed with `RETRIES_EXHAUSTED_DLQ`; false means ineligible or still leased. */
     fun markExhaustedFromDlq(jobId: UUID): Boolean = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET status = 'FAILED',
             last_error = 'SQS moved the job message to the dead-letter queue after retries were exhausted',

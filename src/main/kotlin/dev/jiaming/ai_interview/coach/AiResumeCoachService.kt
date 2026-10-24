@@ -27,7 +27,7 @@ class AiResumeCoachService(
         return responseMapper.normalizeJobFit(generateStructured(promptBuilder.buildJobFitPrompt(context), JobFitResponse::class.java))
     }
 
-    /** Resumes are retrieved against the target job; saved-experience text is supplied whole, with at most eight matches returned. */
+    /** Resumes are retrieved against the target job; saved-experience text is supplied whole. */
     fun suggestExperiences(resume: ResolvedDocument, targetJob: ResolvedDocument, sources: List<SuggestionSourceInput>): ExperienceSuggestionsResult {
         val texts = sources.map { input ->
             input.source to when (input) {

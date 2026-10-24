@@ -12,9 +12,9 @@ class RagProperties @ConstructorBinding constructor(
     assessmentMaxSnippets: Int,
     questionMaxSnippets: Int,
     feedbackMaxSnippets: Int,
-    assessmentMinJobDescriptionSnippets: Int,
-    questionMinJobDescriptionSnippets: Int,
-    feedbackMinJobDescriptionSnippets: Int,
+    assessmentMinTargetJobSnippets: Int,
+    questionMinTargetJobSnippets: Int,
+    feedbackMinTargetJobSnippets: Int,
     maxSnippetsPerSection: Int,
     rrfK: Int,
     embeddingModel: String?,
@@ -26,9 +26,9 @@ class RagProperties @ConstructorBinding constructor(
     private val assessmentBudget = assessmentMaxSnippets.takeIf { it > 0 } ?: 14
     private val questionBudget = questionMaxSnippets.takeIf { it > 0 } ?: 16
     private val feedbackBudget = feedbackMaxSnippets.takeIf { it > 0 } ?: 10
-    private val assessmentJdMinimum = assessmentMinJobDescriptionSnippets.coerceAtLeast(0)
-    private val questionJdMinimum = questionMinJobDescriptionSnippets.coerceAtLeast(0)
-    private val feedbackJdMinimum = feedbackMinJobDescriptionSnippets.coerceAtLeast(0)
+    private val assessmentMinTargetJobSnippets = assessmentMinTargetJobSnippets.coerceAtLeast(0)
+    private val questionMinTargetJobSnippets = questionMinTargetJobSnippets.coerceAtLeast(0)
+    private val feedbackMinTargetJobSnippets = feedbackMinTargetJobSnippets.coerceAtLeast(0)
     private val maxSection = maxSnippetsPerSection.takeIf { it > 0 } ?: 3
     private val reciprocalRankK = rrfK.takeIf { it > 0 } ?: 15
     private val model = embeddingModel?.takeIf { it.isNotBlank() }?.trim() ?: "gemini-embedding-001"
@@ -50,11 +50,11 @@ class RagProperties @ConstructorBinding constructor(
     /** Returns the feedback-context snippet cap, defaulting to 10. */
     fun feedbackMaxSnippets() = feedbackBudget
     /** Returns the assessment minimum target-job snippets, clamped to zero or greater. */
-    fun assessmentMinJobDescriptionSnippets() = assessmentJdMinimum
+    fun assessmentMinTargetJobSnippets() = assessmentMinTargetJobSnippets
     /** Returns the question minimum target-job snippets, clamped to zero or greater. */
-    fun questionMinJobDescriptionSnippets() = questionJdMinimum
+    fun questionMinTargetJobSnippets() = questionMinTargetJobSnippets
     /** Returns the feedback minimum target-job snippets, clamped to zero or greater. */
-    fun feedbackMinJobDescriptionSnippets() = feedbackJdMinimum
+    fun feedbackMinTargetJobSnippets() = feedbackMinTargetJobSnippets
     /** Returns the per-section snippet cap, defaulting to 3. */
     fun maxSnippetsPerSection() = maxSection
     /** Returns the reciprocal-rank-fusion constant, defaulting to 15. */

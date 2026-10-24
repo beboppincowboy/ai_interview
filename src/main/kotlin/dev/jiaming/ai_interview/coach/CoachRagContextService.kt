@@ -30,15 +30,15 @@ class CoachRagContextService @Autowired constructor(
 
     /** Job-fit context: at most [RagProperties.assessmentMaxSnippets] snippets; short pairs go whole, and returned context reports whether vectors backed it. */
     fun jobFitContext(input: CoachAnalysisInput) = ragContext(input.resume(), input.targetJob(), jobFitQueries(input),
-        SelectionProfile("job-fit", properties.assessmentMaxSnippets(), properties.assessmentMinJobDescriptionSnippets()))
+        SelectionProfile("job-fit", properties.assessmentMaxSnippets(), properties.assessmentMinTargetJobSnippets()))
     /** Practice-question context: at most [RagProperties.questionMaxSnippets] snippets; short pairs go whole, and returned context reports whether vectors backed it. */
     fun practiceQuestionContext(input: CoachAnalysisInput) = ragContext(input.resume(), input.targetJob(), questionQueries(input),
-        SelectionProfile("practice-questions", properties.questionMaxSnippets(), properties.questionMinJobDescriptionSnippets()))
+        SelectionProfile("practice-questions", properties.questionMaxSnippets(), properties.questionMinTargetJobSnippets()))
     /** Feedback context: at most [RagProperties.feedbackMaxSnippets] snippets; short pairs go whole, and returned context reports whether vectors backed it. */
     fun feedbackContext(input: CoachFeedbackInput) = ragContext(input.resume(), input.targetJob(), feedbackQueries(input),
-        SelectionProfile("feedback", properties.feedbackMaxSnippets(), properties.feedbackMinJobDescriptionSnippets()))
+        SelectionProfile("feedback", properties.feedbackMaxSnippets(), properties.feedbackMinTargetJobSnippets()))
 
-    /** Returns the resume whole through 6,000 chars, else at most [RagProperties.assessmentMaxSnippets] snippets; retrieval errors fall back locally. */
+    /** Returns the resume whole when its text is within [DIRECT_CONTEXT_LIMIT] chars, else at most [RagProperties.assessmentMaxSnippets] snippets; retrieval errors fall back locally. */
     fun suggestionSourceText(resume: ResolvedDocument, targetJob: ResolvedDocument): String =
         if (safe(resume.normalizedText()).length <= DIRECT_CONTEXT_LIMIT) resume.normalizedText()
         else ragContext(resume, Optional.empty(), suggestionQueries(targetJob),

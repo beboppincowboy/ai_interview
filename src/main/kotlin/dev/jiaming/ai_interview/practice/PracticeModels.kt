@@ -66,7 +66,6 @@ data class AnswerFeedbackResult(
     val followUpQuestion: String?,
 )
 
-/** What the feedback handler scores: the attempt's text and its question. */
 /** Answer and question context consumed by the feedback job handler. */
 data class AttemptScoringInput(val text: String, val questionText: String, val category: String?, val expectedSignals: List<String>)
 
