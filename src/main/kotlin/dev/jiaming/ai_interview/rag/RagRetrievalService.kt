@@ -15,23 +15,19 @@ import java.util.concurrent.TimeUnit
 @Service
 class RagRetrievalService(
     private val vectorStoreProvider: ObjectProvider<VectorStore>,
-    private val ragProperties: RagProperties,
     private val meterRegistry: MeterRegistry
 ) {
-    fun retrieve(query: String?) = retrieve(query, ragProperties.defaultTopK())
-
-    fun retrieve(query: String?, topK: Int): List<RagContextSnippet> {
-        val normalized = normalizedQuery(query)
-        if (normalized.isEmpty()) return emptyList()
-        return search(SearchRequest.builder().query(normalized).topK(topK).build())
-    }
-
+    /**
+     * Searches only the vectors of [indexes] (each at its claim version). A blank query or no indexes returns [].
+     * Throws IllegalStateException when no VectorStore is configured; vector-store errors propagate.
+     */
     fun retrieve(query: String?, indexes: List<RagDocumentIndexHandle>?, topK: Int): List<RagContextSnippet> {
         val normalized = normalizedQuery(query)
         if (normalized.isEmpty() || indexes.isNullOrEmpty()) return emptyList()
         return search(SearchRequest.builder().query(normalized).topK(topK).filterExpression(filter(indexes)).build())
     }
 
+    /** Searches only the vectors of [index]; a null index or blank query returns []. Throws IllegalStateException when no VectorStore is configured. */
     fun retrieve(query: String?, index: RagDocumentIndexHandle?, topK: Int) =
         if (index == null) emptyList() else retrieve(query, listOf(index), topK)
 
