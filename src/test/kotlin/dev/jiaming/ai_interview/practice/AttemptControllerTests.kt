@@ -5,7 +5,7 @@ import dev.jiaming.ai_interview.common.ApiExceptionHandler
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobStatus
 import dev.jiaming.ai_interview.jobs.JobType
@@ -43,8 +43,8 @@ class AttemptControllerTests {
             .andExpect(jsonPath("$.status").value("PENDING"))
             .andExpect(jsonPath("$.feedback").value(org.hamcrest.Matchers.nullValue()))
             .andExpect(jsonPath("$.scoreDelta").value(org.hamcrest.Matchers.nullValue()))
-            .andExpect(jsonPath("$.activeJob.jobType").value("ANSWER_FEEDBACK"))
-            .andExpect(jsonPath("$.activeJob.stage").value("QUEUED"))
+            .andExpect(jsonPath("$.latestJob.jobType").value("ANSWER_FEEDBACK"))
+            .andExpect(jsonPath("$.latestJob.stage").value("QUEUED"))
             .andExpect(jsonPath("$.createdAt").value("2026-09-30T12:00:00Z"))
     }
 
@@ -90,7 +90,7 @@ class AttemptControllerTests {
 
     private fun attempt(status: AttemptStatus) = AttemptView(
         UUID.randomUUID(), 2, "I added retries.", status, null, null,
-        ActiveJob(UUID.randomUUID(), JobType.ANSWER_FEEDBACK, JobStatus.QUEUED, JobStage.QUEUED, 0, 3, null),
+        LatestJob(UUID.randomUUID(), JobType.ANSWER_FEEDBACK, JobStatus.QUEUED, JobStage.QUEUED, 0, 3, null),
         Instant.parse("2026-09-30T12:00:00Z"),
     )
 }

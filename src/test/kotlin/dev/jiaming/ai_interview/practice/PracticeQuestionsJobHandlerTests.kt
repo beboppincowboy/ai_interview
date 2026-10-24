@@ -37,7 +37,7 @@ class PracticeQuestionsJobHandlerTests {
     private val lease = UUID.randomUUID()
     private val payload = PracticeQuestionsPayload(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
     private val drafts = PracticeQuestionDrafts((1..3).map { PracticeQuestionDraft("Question $it?", "Reason $it", null, listOf("signal")) })
-    private val saved = listOf(PracticeQuestionView(UUID.randomUUID(), 1, "AI", "Question 1?", "Reason 1", null, listOf("signal")))
+    private val saved = listOf(PracticeQuestionView(UUID.randomUUID(), 1, QuestionOrigin.AI, "Question 1?", "Reason 1", null, listOf("signal")))
 
     @Test
     fun generatesFromThePairThenCheckpointsBeforeSavingAndReturnsTheSavedQuestions() {

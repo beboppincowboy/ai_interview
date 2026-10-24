@@ -40,10 +40,26 @@ describe("resume library", () => {
     expect(within(box).getByRole("button", { name: "Rename Backend" })).toBeInTheDocument();
   });
 
+  it("keeps the project dialog open with a duplicate notice when the experience is already saved", async () => {
+    const description = "Built a reliable payment service.";
+    const saved = store.createExperience({ title: "Staff Engineer", organization: null, startDate: null, endDate: null, description }).body.experience;
+    const user = userEvent.setup();
+    renderRoute("/library/experiences");
+    await user.click((await screen.findAllByRole("button", { name: /add a project/i }))[0]);
+    await user.type(screen.getByLabelText("Title"), "staff engineer");
+    await user.type(screen.getByLabelText("What you did"), description);
+    await user.click(screen.getByRole("button", { name: "Save project" }));
+
+    const notice = await screen.findByText(/already saved as/i);
+    const box = notice.closest("[role=status]") as HTMLElement;
+    expect(within(box).getByRole("link", { name: "Staff Engineer" })).toHaveAttribute("href", `#item-${saved.id}`);
+    expect(screen.getByRole("button", { name: "Save project" })).toBeInTheDocument();
+  });
+
   it("recovers a duplicate notice after reload and clears the stored job when dismissed", async () => {
     store.pasteResume({ name: "Backend", jobTitle: null, text: RESUME_TEXT });
     const upload = store.uploadResume({ fileName: "copy.txt", size: RESUME_TEXT.length, content: RESUME_TEXT, name: "Copy" });
-    const jobId = upload.body.resume.activeJob!.jobId;
+    const jobId = upload.body.resume.latestJob!.jobId;
     saveResumeUploadJobs([jobId]);
 
     const firstTab = renderRoute("/library/resumes");

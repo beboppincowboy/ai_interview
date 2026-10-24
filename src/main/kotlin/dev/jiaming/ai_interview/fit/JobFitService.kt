@@ -3,9 +3,8 @@ package dev.jiaming.ai_interview.fit
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobAcceptedResponse
 import dev.jiaming.ai_interview.jobs.JobFitPayload
@@ -24,22 +23,23 @@ class JobFitService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val backgroundJobStore: BackgroundJobStore,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
 ) {
+    /** Reads owner-scoped pair state even when the resume is unready; result/time stay null until a result is saved, while latest job remains visible. */
     fun get(resumeId: UUID, targetJobId: UUID): FitView {
         val userId = localUserService.localUserId()
         requireOwnedInputs(userId, resumeId, targetJobId, lockRows = false, requireReady = false)
         val row = findFit(userId, resumeId, targetJobId).firstOrNull()
-        val activeJob = row?.id?.let { fitId ->
+        val latestJob = row?.id?.let { fitId ->
             backgroundJobStore.findLatestForResource(userId, FIT_RESOURCE, fitId, listOf(JobType.JOB_FIT))
-                .map(ActiveJob::from).orElse(null)
+                .map(LatestJob::from).orElse(null)
         }
-        return FitView(resumeId, targetJobId, row?.resultPayload?.let { objectMapper.readValue(it, JobFitResult::class.java) }, row?.resultCreatedAt, activeJob)
+        return FitView(resumeId, targetJobId, row?.resultPayload?.let { objectMapper.readValue(it, JobFitResult::class.java) }, row?.resultCreatedAt, latestJob)
     }
 
+    /** Requires ready owned inputs, then starts or reuses a pair-scoped fit job. */
     fun run(resumeId: UUID, targetJobId: UUID): JobAcceptedResponse {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -54,16 +54,14 @@ class JobFitService(
                     val fitId = upsertAndLockFit(userId, resumeId, targetJobId)
                     val fingerprint = jobSubmissionService.fingerprint(JobType.JOB_FIT.name, fitId)
                     val reusable = jobSubmissionService.findReusable(JobType.JOB_FIT, fingerprint)
-                    if (reusable.isPresent) reusable.get() else {
-                        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-                        jobSubmissionService.createOrReuse(
-                            JobType.JOB_FIT,
-                            FIT_RESOURCE,
-                            fitId,
-                            JobFitPayload(fitId, resumeId, targetJobId),
-                            fingerprint,
-                        )
-                    }
+                    // Checked first so that rerunning an active fit is not charged to the AI rate limit.
+                    if (reusable.isPresent) reusable.get() else jobSubmissionService.submit(
+                        JobType.JOB_FIT,
+                        FIT_RESOURCE,
+                        fitId,
+                        JobFitPayload(fitId, resumeId, targetJobId),
+                        dedupKey = fingerprint,
+                    )
                 })
             },
         )

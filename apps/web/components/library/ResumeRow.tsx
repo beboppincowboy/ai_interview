@@ -9,6 +9,7 @@ import { useResume } from "@/lib/query/library";
 import { DeleteConfirm } from "./DeleteConfirm";
 import { InlineRename } from "./InlineRename";
 
+/** Shows one resume with rename/delete actions; expanding a READY row fetches its text on demand. */
 export function ResumeRow({ resume }: { resume: Resume }) {
   const [expanded, setExpanded] = useState(false);
   const detail = useResume(resume.id, { enabled: expanded });
@@ -30,12 +31,12 @@ export function ResumeRow({ resume }: { resume: Resume }) {
           {processing ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
               <Loader2 className="size-3 animate-spin" aria-hidden />
-              {resume.activeJob ? STAGE_LABELS[resume.activeJob.stage] : "Processing"}…
+              {resume.latestJob ? STAGE_LABELS[resume.latestJob.stage] : "Processing"}…
             </p>
           ) : null}
           {resume.status === "FAILED" ? (
             <p className="text-sm text-destructive">
-              {friendlyError(resume.activeJob?.error ?? null, "The text could not be read from this file.")} Delete it and try another file.
+              {friendlyError(resume.latestJob?.error ?? null, "The text could not be read from this file.")} Delete it and try another file.
             </p>
           ) : null}
         </div>

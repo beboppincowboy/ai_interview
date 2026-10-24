@@ -6,7 +6,7 @@ function fixture() {
   const store = createMockStore({ now: () => clock, queuedMs: 100, stageMs: 100 });
   const resume = store.pasteResume({ name: "Backend", text: "Resume evidence ".repeat(10) }).body.resume;
   const job = store.createTargetJob({ name: "Acme", text: "Backend job ".repeat(10) }).body.targetJob;
-  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body;
+  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body.practiceSet;
   clock += 10_000;
   store.getPracticeSet(set.id);
   const draft = store.createVoiceSession(set.id);
@@ -25,7 +25,7 @@ it("keeps Save identity and immutable text across failed-report Retry", () => {
   const retry = store.retryVoiceReport(draft.id);
   expect(retry.submissionJobId).toBe(submission);
   expect(retry.reportJobId).not.toBe(submission);
-  expect(store.saveVoiceSession(draft.id, transcript)).toMatchObject({ replayed: true, session: { submissionJobId: submission, reportJobId: retry.reportJobId } });
+  expect(store.saveVoiceSession(draft.id, transcript)).toMatchObject({ duplicate: true, session: { submissionJobId: submission, reportJobId: retry.reportJobId } });
   expect(() => store.saveVoiceSession(draft.id, { answers: [{ ...transcript.answers[0], answerText: "Changed" }] })).toThrow(expect.objectContaining({ code: "VOICE_SESSION_ALREADY_SAVED" }));
   expect(() => store.deleteVoiceSession(draft.id, true)).toThrow(expect.objectContaining({ code: "VOICE_SESSION_ALREADY_SAVED" }));
   finish();

@@ -45,11 +45,11 @@ export default function ScorePage() {
   const { resumeId } = route.useParams();
   const resume = useResume(resumeId);
   const score = useScoreResume(resumeId);
-  const { job, timedOut, checkAgain } = useFollowJob(resume.data?.activeJob, [keys.resume(resumeId), keys.resumes]);
+  const { job, timedOut, checkAgain } = useFollowJob(resume.data?.latestJob, [keys.resume(resumeId), keys.resumes]);
 
   const data = resume.data;
   // Score automatically only when this resume has never been scored or tried; re-scores are the user's call (R8).
-  useAutoStart(Boolean(data && data.status === "READY" && !data.score && data.activeJob?.jobType !== "RESUME_SCORE"), resumeId, () => score.mutate());
+  useAutoStart(Boolean(data && data.status === "READY" && !data.score && data.latestJob?.jobType !== "RESUME_SCORE"), resumeId, () => score.mutate());
 
   if (isNotFound(resume.error)) return <DeletedState what="resume" />;
   const scoring = job?.jobType === "RESUME_SCORE" && job.status !== "SUCCEEDED" && job.status !== "FAILED";

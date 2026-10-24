@@ -12,7 +12,7 @@ import { useSaveExperiences, useSplitLinkedIn } from "@/lib/query/library";
 import { useJob } from "@/lib/query/useJob";
 import { TextField } from "./TextField";
 
-/** Paste LinkedIn Experience text, let the AI split it, review the items, then save the ones kept. */
+/** Splits and reviews pasted experience, persists text/job/removals to localStorage, and reopens on mount when recovery exists. */
 export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; trigger?: React.ReactNode }) {
   const [recovery] = useState(readLinkedInRecovery);
   const [open, setOpen] = useState(Boolean(recovery?.text || recovery?.jobId));
@@ -104,7 +104,7 @@ export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; tri
                         <p className="font-medium">{item.title}</p>
                         <p className="line-clamp-3 text-sm text-muted-foreground">{item.description}</p>
                         {item.duplicateOf ? (
-                          <p className="text-sm text-muted-foreground">Already saved as “{item.duplicateOf.title}”; it will be skipped.</p>
+                          <p className="text-sm text-muted-foreground">Already saved as “{item.duplicateOf.title}”; it will not be saved again.</p>
                         ) : null}
                       </div>
                       {!item.duplicateOf ? (
@@ -127,8 +127,8 @@ export function LinkedInDialog({ onSaved, trigger }: { onSaved?: () => void; tri
                   kept.map(({ duplicateOf: _duplicate, ...item }) => item),
                   {
                     onSuccess: (result) => {
-                      const skipped = result.skipped.length ? ` ${result.skipped.length} already saved.` : "";
-                      toast.success(`Saved ${result.created.length} ${result.created.length === 1 ? "item" : "items"}.${skipped}`);
+                      const duplicates = result.duplicates.length ? ` ${result.duplicates.length} already saved.` : "";
+                      toast.success(`Saved ${result.created.length} ${result.created.length === 1 ? "item" : "items"}.${duplicates}`);
                       onSaved?.();
                       discard();
                     }

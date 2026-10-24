@@ -1,8 +1,8 @@
 package dev.jiaming.ai_interview.coach
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.experience.ExperienceSplitResult
 import dev.jiaming.ai_interview.experience.ExperienceSplitItem
 import dev.jiaming.ai_interview.fit.FitFeedback
@@ -34,7 +34,7 @@ class CoachResponseMapperTests {
 		))
 
 		assertThatThrownBy { mapper.normalizeExperienceSplit(response) }
-			.isInstanceOf(GeminiException::class.java)
+			.isInstanceOf(AiProviderException::class.java)
 			.hasMessageContaining("experience")
 	}
 
@@ -57,7 +57,7 @@ class CoachResponseMapperTests {
         assertThat(normalized.scores.technicalDepth).isEqualTo(100)
         assertThat(normalized.scores.impact).isZero()
         assertThat(normalized.fixes.map { it.rank }).containsExactly(1, 2)
-        assertThat(normalized.fixes.map { it.priority }).containsExactly("HIGH", "MEDIUM")
+        assertThat(normalized.fixes.map { it.priority }).containsExactly(Priority.HIGH, Priority.MEDIUM)
         assertThat(normalized.rewrites.single().placeholders).containsExactly("[X%]", "[N]")
         assertThat(normalized.jobTitle).isEqualTo("Backend Engineer")
     }
@@ -91,7 +91,7 @@ class CoachResponseMapperTests {
 		assertThat(normalized.summary).isEqualTo("Strong match.")
 		assertThat(normalized.matchedRequirements).containsExactly(MatchedRequirement("Kotlin", "Built Kotlin services"))
 		assertThat(normalized.missingRequirements).containsExactly(MissingRequirement("Kafka", "Describe relevant work honestly."))
-		assertThat(normalized.feedback).containsExactly(FitFeedback("HIGH", "Move the project up."), FitFeedback("MEDIUM", "Keep it concise."))
+		assertThat(normalized.feedback).containsExactly(FitFeedback(Priority.HIGH, "Move the project up."), FitFeedback(Priority.MEDIUM, "Keep it concise."))
 	}
 
 	@Test
@@ -111,7 +111,7 @@ class CoachResponseMapperTests {
 		val response = mapper.parse(practiceQuestionsJson(2), PracticeQuestionsResponse::class.java)
 
 		assertThatThrownBy { mapper.normalizePracticeQuestions(response) }
-			.isInstanceOfSatisfying(GeminiException::class.java) { assertThat(it.code()).isEqualTo(GeminiErrorCode.INVALID_RESPONSE) }
+			.isInstanceOfSatisfying(AiProviderException::class.java) { assertThat(it.code()).isEqualTo(AiProviderErrorCode.INVALID_RESPONSE) }
 	}
 
 	@Test
@@ -121,7 +121,7 @@ class CoachResponseMapperTests {
 			PracticeQuestionsResponse::class.java,
 		)
 
-		assertThatThrownBy { mapper.normalizePracticeQuestions(response) }.isInstanceOf(GeminiException::class.java)
+		assertThatThrownBy { mapper.normalizePracticeQuestions(response) }.isInstanceOf(AiProviderException::class.java)
 	}
 
 	@Test
@@ -132,7 +132,7 @@ class CoachResponseMapperTests {
 		)
 
 		assertThatThrownBy { mapper.normalizePracticeQuestions(response) }
-			.isInstanceOfSatisfying(GeminiException::class.java) { assertThat(it.code()).isEqualTo(GeminiErrorCode.INVALID_RESPONSE) }
+			.isInstanceOfSatisfying(AiProviderException::class.java) { assertThat(it.code()).isEqualTo(AiProviderErrorCode.INVALID_RESPONSE) }
 	}
 
 	@Test

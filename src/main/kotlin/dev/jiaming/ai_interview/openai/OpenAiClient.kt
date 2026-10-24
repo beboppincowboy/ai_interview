@@ -3,10 +3,10 @@ package dev.jiaming.ai_interview.openai
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.coach.StructuredGenerationClient
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
-import dev.jiaming.ai_interview.gemini.GeminiTransport
-import dev.jiaming.ai_interview.gemini.jdkTransport
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
+import dev.jiaming.ai_interview.ai.AiHttpTransport
+import dev.jiaming.ai_interview.ai.jdkTransport
 import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit
 @ConditionalOnProperty(prefix = "app.ai", name = ["chat-provider"], havingValue = "openai")
 class OpenAiClient(
     private val objectMapper: ObjectMapper,
-    private val transport: GeminiTransport,
+    private val transport: AiHttpTransport,
     private val meterRegistry: MeterRegistry,
     private val endpoint: String,
     private val apiKey: String?,
@@ -51,7 +51,7 @@ class OpenAiClient(
     )
 
     override fun generateJson(prompt: String): String {
-        if (apiKey.isNullOrBlank()) throw GeminiException(GeminiErrorCode.NOT_CONFIGURED, "OpenAI is not configured", false)
+        if (apiKey.isNullOrBlank()) throw AiProviderException(AiProviderErrorCode.NOT_CONFIGURED, "OpenAI is not configured", false)
         val startedAt = System.nanoTime()
         try {
             val request = HttpRequest.newBuilder().uri(URI.create(endpoint)).timeout(requestTimeout)
@@ -62,15 +62,15 @@ class OpenAiClient(
             return extractText(response.body).also { recordCall("success", startedAt) }
         } catch (exception: HttpTimeoutException) {
             recordCall("timeout", startedAt)
-            throw GeminiException(GeminiErrorCode.TIMEOUT, "OpenAI request timed out", exception, true)
+            throw AiProviderException(AiProviderErrorCode.TIMEOUT, "OpenAI request timed out", exception, true)
         } catch (exception: IOException) {
             recordCall("network", startedAt)
-            throw GeminiException(GeminiErrorCode.UPSTREAM_ERROR, "OpenAI could not be reached", exception, true)
+            throw AiProviderException(AiProviderErrorCode.UPSTREAM_ERROR, "OpenAI could not be reached", exception, true)
         } catch (exception: InterruptedException) {
             Thread.currentThread().interrupt()
             recordCall("interrupted", startedAt)
-            throw GeminiException(GeminiErrorCode.TIMEOUT, "OpenAI request was interrupted", exception, true)
-        } catch (exception: GeminiException) {
+            throw AiProviderException(AiProviderErrorCode.TIMEOUT, "OpenAI request was interrupted", exception, true)
+        } catch (exception: AiProviderException) {
             recordCall(exception.code.lowercase(Locale.ROOT).removePrefix("gemini_"), startedAt)
             throw exception
         }
@@ -85,30 +85,30 @@ class OpenAiClient(
         "max_completion_tokens" to maxOutputTokens
     ))
 
-    private fun httpFailure(statusCode: Int, body: String): GeminiException {
+    private fun httpFailure(statusCode: Int, body: String): AiProviderException {
         // OpenAI's error code only (e.g. rate_limit_exceeded, insufficient_quota); never the prompt or the full body.
         val reason = runCatching { objectMapper.readTree(body).path("error").path("code").asText("") }.getOrDefault("")
         log.warn("openai_request_rejected model={} status={} reason={}", MODEL, statusCode, reason)
         // An exhausted balance does not recover on retry; a per-minute limit does.
-        return if (statusCode == 429) GeminiException(GeminiErrorCode.RATE_LIMITED, "OpenAI rate limit exceeded", statusCode, reason != "insufficient_quota")
-        else GeminiException(GeminiErrorCode.UPSTREAM_ERROR, "OpenAI request failed", statusCode, statusCode == 408 || statusCode >= 500)
+        return if (statusCode == 429) AiProviderException(AiProviderErrorCode.RATE_LIMITED, "OpenAI rate limit exceeded", statusCode, reason != "insufficient_quota")
+        else AiProviderException(AiProviderErrorCode.UPSTREAM_ERROR, "OpenAI request failed", statusCode, statusCode == 408 || statusCode >= 500)
     }
 
     private fun extractText(responseBody: String): String {
         val root = try { objectMapper.readTree(responseBody) }
-        catch (_: JsonProcessingException) { throw GeminiException(GeminiErrorCode.UPSTREAM_ERROR, "OpenAI returned an unreadable response", true) }
+        catch (_: JsonProcessingException) { throw AiProviderException(AiProviderErrorCode.UPSTREAM_ERROR, "OpenAI returned an unreadable response", true) }
         val choice = root.path("choices").path(0)
-        if (choice.isMissingNode) throw GeminiException(GeminiErrorCode.EMPTY_RESPONSE, "OpenAI returned no choice", true)
+        if (choice.isMissingNode) throw AiProviderException(AiProviderErrorCode.EMPTY_RESPONSE, "OpenAI returned no choice", true)
         val message = choice.path("message")
-        if (message.hasNonNull("refusal")) throw GeminiException(GeminiErrorCode.SAFETY, "OpenAI refused the request", false)
+        if (message.hasNonNull("refusal")) throw AiProviderException(AiProviderErrorCode.SAFETY, "OpenAI refused the request", false)
         when (choice.path("finish_reason").asText("")) {
             "stop" -> Unit
-            "length" -> throw GeminiException(GeminiErrorCode.MAX_TOKENS, "OpenAI reached the output token limit", false)
-            "content_filter" -> throw GeminiException(GeminiErrorCode.SAFETY, "OpenAI filtered the response", false)
-            else -> throw GeminiException(GeminiErrorCode.UPSTREAM_ERROR, "OpenAI ended with an unsupported finish reason", false)
+            "length" -> throw AiProviderException(AiProviderErrorCode.MAX_TOKENS, "OpenAI reached the output token limit", false)
+            "content_filter" -> throw AiProviderException(AiProviderErrorCode.SAFETY, "OpenAI filtered the response", false)
+            else -> throw AiProviderException(AiProviderErrorCode.UPSTREAM_ERROR, "OpenAI ended with an unsupported finish reason", false)
         }
         val text = message.path("content").asText("").trim()
-        if (text.isEmpty()) throw GeminiException(GeminiErrorCode.EMPTY_RESPONSE, "OpenAI returned an empty response", true)
+        if (text.isEmpty()) throw AiProviderException(AiProviderErrorCode.EMPTY_RESPONSE, "OpenAI returned an empty response", true)
         return text
     }
 

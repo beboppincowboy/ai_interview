@@ -3,8 +3,10 @@ package dev.jiaming.ai_interview.coach
 import dev.jiaming.ai_interview.suggestions.SuggestionSource
 import org.springframework.stereotype.Component
 
+/** Builds JSON-only coach prompts; injected tag-shaped input is escaped except the already-built original request in repair prompts. */
 @Component
 class CoachPromptBuilder {
+    /** Requests ordered distinct roles/projects with bounded title/description fields and nullable `YYYY-MM` dates. */
     fun buildExperienceSplitPrompt(text: String): String = prompt(
         role = "You extract work experience from text a candidate pasted from the Experience section of their LinkedIn profile.",
         steps = listOf(
@@ -29,6 +31,7 @@ class CoachPromptBuilder {
         inputs = listOf("linkedin_text" to text)
     )
 
+    /** Requests five 0–100 scores, up to six fixes, and up to five rewrites anchored to exact resume lines. */
     fun buildResumeScorePrompt(resumeText: String, jobTitle: String?): String = prompt(
         role = "You are a practical resume coach giving one resume a general score.",
         steps = listOf(
@@ -56,6 +59,7 @@ class CoachPromptBuilder {
         inputs = listOf("job_title" to fallback(jobTitle, "Not provided"), "resume" to resumeText)
     )
 
+    /** Requests evidence-backed matched/missing requirements, up to five feedback items, and a 0–100 fit score. */
     fun buildJobFitPrompt(context: CoachRagContext): String = prompt(
         role = "You are a careful technical recruiter comparing one candidate's resume with one target job.",
         steps = listOf(
@@ -84,7 +88,8 @@ class CoachPromptBuilder {
         inputs = listOf("context" to context.context)
     )
 
-    fun buildExperienceSuggestionsPrompt(resumeText: String, jobDescription: String, sources: List<Pair<SuggestionSource, String>>): String = prompt(
+    /** Requests at most eight source-cited matches and guidance, never finished resume bullets. */
+    fun buildExperienceSuggestionsPrompt(resumeText: String, targetJobText: String, sources: List<Pair<SuggestionSource, String>>): String = prompt(
         role = "You are a careful career coach helping a candidate tailor one resume to one target job.",
         steps = listOf(
             "Read the requirements in <job_description>.",
@@ -106,12 +111,13 @@ class CoachPromptBuilder {
             }
         """,
         inputs = listOf(
-            "job_description" to jobDescription,
+            "job_description" to targetJobText,
             "selected_resume" to resumeText,
             "sources" to sources.joinToString("\n\n") { (source, text) -> "[sourceId=${source.id} type=${source.type} name=${source.name}]\n$text" }
         )
     )
 
+    /** Requests 3–8 questions with category, rationale, and expected answer signals. */
     fun buildPracticeQuestionPrompt(context: CoachRagContext): String = prompt(
         role = "You write interview practice questions for one candidate preparing for one target job.",
         steps = listOf(
@@ -134,7 +140,7 @@ class CoachPromptBuilder {
         inputs = listOf("context" to context.context)
     )
 
-    /** Scores one practice attempt against its question and the pair's resume and job description. */
+    /** Requests score and answer feedback; incomplete capture instructs the model to judge recorded words only. */
     fun buildPracticeFeedbackPrompt(input: CoachFeedbackInput, context: CoachRagContext): String = prompt(
         role = "You are an interview coach scoring one practice answer for one target job.",
         steps = listOf(
@@ -170,6 +176,7 @@ class CoachPromptBuilder {
         ) + if (input.incompleteCapture()) listOf("capture_status" to "INCOMPLETE: the answer capture may have ended early") else emptyList()
     )
 
+    /** Asks for only the changes needed to satisfy the original prompt's JSON shape and rules. */
     fun buildRepairPrompt(originalPrompt: String, invalidOutput: String, parseError: String?): String = prompt(
         role = "You repair a JSON response that did not meet its original request.",
         steps = listOf(

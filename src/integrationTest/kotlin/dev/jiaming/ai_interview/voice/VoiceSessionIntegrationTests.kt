@@ -12,7 +12,7 @@ import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
 import dev.jiaming.ai_interview.common.RuntimeModeProperties
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobDispatcher
 import dev.jiaming.ai_interview.jobs.JobEffectType
@@ -200,7 +200,7 @@ class VoiceSessionIntegrationTests {
 
         val saved = voice.save(session.id, reviewed)
 
-        assertThat(saved.replayed).isFalse()
+        assertThat(saved.duplicate).isFalse()
         val view = saved.session
         assertThat(view.status).isEqualTo(VoiceSessionStatus.SAVED)
         assertThat(view.savedAt).isNotNull()
@@ -233,34 +233,34 @@ class VoiceSessionIntegrationTests {
         val session = voice.create(readySet().id)
         val reviewed = transcript(session, "An answer")
         Mockito.doAnswer { it.callRealMethod(); throw IllegalStateException("connection lost before commit") }
-            .`when`(jobs).createIfAbsentWithInitialResult(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
+            .`when`(jobs).createIfAbsentWithInitialCheckpoint(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
 
         assertThatThrownBy { voice.save(session.id, reviewed) }.hasMessageContaining("connection lost before commit")
         assertThat(voice.get(session.id)).isEqualTo(session)
         assertThat(count("background_jobs")).isZero()
 
         Mockito.reset(jobs)
-        assertThat(voice.save(session.id, reviewed).replayed).isFalse()
+        assertThat(voice.save(session.id, reviewed).duplicate).isFalse()
         assertThat(count("background_jobs")).isEqualTo(1)
     }
 
     @Test
-    fun concurrentIdenticalSavesAndALaterReplayKeepOneTranscriptAndTheOriginalSubmission() {
+    fun concurrentIdenticalSavesAndALaterDuplicateSaveKeepOneTranscriptAndTheOriginalSubmission() {
         val session = voice.create(readySet().id)
         val reviewed = transcript(session, "First answer", "Second answer")
 
         val results = concurrently(2) { voice.save(session.id, reviewed) }
 
-        assertThat(results.map { it.replayed }).containsExactlyInAnyOrder(false, true)
+        assertThat(results.map { it.duplicate }).containsExactlyInAnyOrder(false, true)
         val jobId = results.map { it.session.submissionJobId }.distinct().single()!!
         assertThat(count("background_jobs")).isEqualTo(1)
         jdbc.update("UPDATE ai_interview_app.background_jobs SET status = 'SUCCEEDED', stage = 'COMPLETED', completed_at = now() WHERE id = ?", jobId)
 
         // Order and surrounding whitespace are normalized away, so this is the same reviewed transcript.
-        val replay = voice.save(session.id, VoiceTranscript(reviewed.answers.reversed().map { it.copy(answerText = " ${it.answerText} ") }))
-        assertThat(replay.replayed).isTrue()
-        assertThat(replay.session.submissionJobId).isEqualTo(jobId)
-        assertThat(replay.session.transcript).isEqualTo(reviewed)
+        val again = voice.save(session.id, VoiceTranscript(reviewed.answers.reversed().map { it.copy(answerText = " ${it.answerText} ") }))
+        assertThat(again.duplicate).isTrue()
+        assertThat(again.session.submissionJobId).isEqualTo(jobId)
+        assertThat(again.session.transcript).isEqualTo(reviewed)
         assertThat(count("background_jobs")).isEqualTo(1)
         Mockito.verify(guard, Mockito.times(1)).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
 
@@ -282,11 +282,11 @@ class VoiceSessionIntegrationTests {
         assertThat(voice.get(expired.id).transcript).isNull()
         assertThat(count("background_jobs")).isEqualTo(1)
 
-        // A committed Save outlives the draft window and still replays.
+        // A committed Save outlives the draft window and still returns it as a duplicate.
         age(late.id, Duration.ofHours(25))
-        val replay = voice.save(late.id, transcript(late, "Finished after the run ended"))
-        assertThat(replay.replayed).isTrue()
-        assertThat(replay.session.status).isEqualTo(VoiceSessionStatus.SAVED)
+        val again = voice.save(late.id, transcript(late, "Finished after the run ended"))
+        assertThat(again.duplicate).isTrue()
+        assertThat(again.session.status).isEqualTo(VoiceSessionStatus.SAVED)
     }
 
     @Test
@@ -342,7 +342,7 @@ class VoiceSessionIntegrationTests {
 
         val (save, discard) = raceWithPausedSave(session.id, transcript(session, "Committed")) { voice.discard(session.id) }
 
-        assertThat(save.getOrThrow().replayed).isFalse()
+        assertThat(save.getOrThrow().duplicate).isFalse()
         assertThat((discard.exceptionOrNull() as ApiRequestException).code()).isEqualTo("VOICE_SESSION_ALREADY_SAVED")
         assertThat(voice.get(session.id).transcript!!.answers.single().answerText).isEqualTo("Committed")
         assertThat(count("background_jobs")).isEqualTo(1)
@@ -422,7 +422,7 @@ class VoiceSessionIntegrationTests {
         val inserted = CountDownLatch(1)
         val release = CountDownLatch(1)
         Mockito.doAnswer { invocation -> invocation.callRealMethod().also { inserted.countDown(); release.await(10, TimeUnit.SECONDS) } }
-            .`when`(jobs).createIfAbsentWithInitialResult(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
+            .`when`(jobs).createIfAbsentWithInitialCheckpoint(any(), any(), any(), any(), any(), any(), Mockito.anyInt(), anyOrNull())
         val executor = Executors.newFixedThreadPool(2)
         try {
             val save = executor.submit(Callable { voice.save(sessionId, reviewed) })
@@ -580,13 +580,13 @@ class VoiceSessionIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
             )
-            voice = VoiceSessionService(jdbc, local, submissions, guard, mapper, transactions)
+            voice = VoiceSessionService(jdbc, local, submissions, mapper, transactions)
             val normalizer = ResumeTextNormalizer()
             library = ResumeLibraryService(
                 jdbc, local, ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher()), normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
-            targetJobs = TargetJobService(jdbc, local, JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
+            targetJobs = TargetJobService(jdbc, local, TargetJobPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
         }
     }
 }

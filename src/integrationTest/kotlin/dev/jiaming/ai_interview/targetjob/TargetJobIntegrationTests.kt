@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.ContentHasher
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobController
 import dev.jiaming.ai_interview.jobs.JobStatusReaderConfiguration
@@ -164,7 +163,7 @@ class TargetJobIntegrationTests {
         private lateinit var jdbcTemplate: JdbcTemplate
         private lateinit var transactions: TransactionTemplate
         private lateinit var service: TargetJobService
-        private lateinit var persistence: JobDescriptionPersistenceService
+        private lateinit var persistence: TargetJobPersistenceService
         private lateinit var userId: UUID
         private lateinit var legacyNamedId: UUID
         private lateinit var legacyUntitledId: UUID
@@ -198,7 +197,7 @@ class TargetJobIntegrationTests {
             Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate()
 
             val localUsers = LocalUserService(jdbcTemplate)
-            persistence = JobDescriptionPersistenceService(jdbcTemplate, ResumeTextNormalizer(), SectionAwareTextChunker(), ContentHasher())
+            persistence = TargetJobPersistenceService(jdbcTemplate, ResumeTextNormalizer(), SectionAwareTextChunker(), ContentHasher())
             service = TargetJobService(jdbcTemplate, localUsers, persistence)
             transactions = TransactionTemplate(DataSourceTransactionManager(dataSource))
         }

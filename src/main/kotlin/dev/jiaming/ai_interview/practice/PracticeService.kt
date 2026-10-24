@@ -3,9 +3,8 @@ package dev.jiaming.ai_interview.practice
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.AttemptFeedbackPayload
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobStatus
@@ -24,18 +23,21 @@ class PracticeService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val backgroundJobStore: BackgroundJobStore,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
 ) {
+    /** Returns the owner-scoped set view or 404 when it does not exist for this user. */
     fun get(setId: UUID): PracticeSetView {
         val userId = localUserService.localUserId()
         return view(userId, findSet(userId, "id = ?", setId) ?: notFound())
     }
 
-    /** Returns the pair's set, creating it with its first generation job when it does not exist yet (§7.1). */
-    fun create(resumeId: UUID, targetJobId: UUID): PracticeSetCreation {
+    /**
+     * Returns the pair's set, creating it with its first generation job when it does not exist yet (§7.1); an existing set
+     * comes back with `duplicate = true` and starts no job. Throws 409 RESUME_NOT_READY for a new set on an unready resume.
+     */
+    fun create(resumeId: UUID, targetJobId: UUID): PracticeSetCreated {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
         return inTransaction {
@@ -43,7 +45,7 @@ class PracticeService(
             val resumeReady = lockInputs(userId, resumeId, targetJobId)
             val existing = findPairSet(userId, resumeId, targetJobId)
             when {
-                existing != null -> PracticeSetCreation(view(userId, existing), false)
+                existing != null -> PracticeSetCreated(view(userId, existing), duplicate = true)
                 !resumeReady -> throw ApiRequestException(HttpStatus.CONFLICT, "RESUME_NOT_READY", "Resume is not ready for practice")
                 else -> {
                     // The unique pair constraint picks one winner among concurrent creates; the loser returns the winner's set.
@@ -57,18 +59,18 @@ class PracticeService(
                         RowMapper { rs, _ -> rs.getObject("id", UUID::class.java) }, userId, resumeId, targetJobId,
                     ).firstOrNull()
                     if (setId == null) {
-                        PracticeSetCreation(view(userId, findPairSet(userId, resumeId, targetJobId) ?: notFound()), false)
+                        PracticeSetCreated(view(userId, findPairSet(userId, resumeId, targetJobId) ?: notFound()), duplicate = true)
                     } else {
                         val set = findSet(userId, "id = ?", setId) ?: notFound()
                         startGeneration(set)
-                        PracticeSetCreation(view(userId, set), true)
+                        PracticeSetCreated(view(userId, set), duplicate = false)
                     }
                 }
             }
         }
     }
 
-    /** Starts a new generation job for a set whose last generation failed (§7.3). */
+    /** Starts generation only when the latest generation failed; otherwise throws 409 `PRACTICE_SET_NOT_FAILED`. */
     fun retry(setId: UUID): PracticeSetView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -86,7 +88,7 @@ class PracticeService(
         }
     }
 
-    /** Appends a user question after the AI questions (§7.4). [text] is already trimmed and checked. */
+    /** Appends a validated 10–500 character question after AI questions; rejects generating sets and more than 10 user questions. */
     fun addQuestion(setId: UUID, text: String): PracticeQuestionView {
         val userId = localUserService.localUserId()
         return inTransaction {
@@ -96,7 +98,7 @@ class PracticeService(
             if (current.status == PracticeSetStatus.GENERATING) {
                 throw ApiRequestException(HttpStatus.CONFLICT, "PRACTICE_SET_NOT_READY", "Practice questions are still being generated")
             }
-            val userQuestions = current.questions.count { it.origin == USER }
+            val userQuestions = current.questions.count { it.origin == QuestionOrigin.USER }
             if (userQuestions >= MAX_USER_QUESTIONS) {
                 throw ApiRequestException(HttpStatus.CONFLICT, "QUESTION_LIMIT_REACHED", "A practice set can have at most $MAX_USER_QUESTIONS of your own questions")
             }
@@ -125,7 +127,7 @@ class PracticeService(
             """.trimIndent(),
             RowMapper { rs, row ->
                 PracticeQuestionView(
-                    rs.getObject("id", UUID::class.java), row + 1, rs.getString("origin"), rs.getString("text"),
+                    rs.getObject("id", UUID::class.java), row + 1, QuestionOrigin.valueOf(rs.getString("origin")), rs.getString("text"),
                     rs.getString("rationale"), rs.getString("category"),
                     objectMapper.readValue(rs.getString("expected_signals"), Array<String>::class.java).toList(),
                 )
@@ -134,7 +136,7 @@ class PracticeService(
         ).map { it.copy(attempts = attemptViews(userId, attempts[it.id].orEmpty())) }
     }
 
-    /** Saves the next numbered attempt and starts its feedback job in one transaction (§7.5). [text] is already trimmed and checked. */
+    /** Saves the next numbered attempt and starts feedback atomically; an unchanged latest answer conflicts with `ANSWER_UNCHANGED`. */
     fun submitAttempt(setId: UUID, questionId: UUID, text: String): AttemptView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -159,7 +161,7 @@ class PracticeService(
         }
     }
 
-    /** Starts a new feedback job for a failed attempt, keeping its ID, number and text (§7.6). */
+    /** Retries only failed feedback while preserving attempt identity, number, and text; otherwise throws `ATTEMPT_NOT_FAILED`. */
     fun retryAttempt(attemptId: UUID): AttemptView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -192,24 +194,20 @@ class PracticeService(
     ).firstOrNull()
 
     private fun startGeneration(set: SetRow) {
-        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-        jobSubmissionService.createOrReuse(
+        jobSubmissionService.submit(
             JobType.PRACTICE_QUESTIONS,
             RESOURCE,
             set.id,
             PracticeQuestionsPayload(set.id, set.resumeId, set.targetJobId),
-            jobSubmissionService.fingerprint(JobType.PRACTICE_QUESTIONS.name, set.id),
         )
     }
 
     private fun startFeedback(attemptId: UUID, question: QuestionRow) {
-        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-        jobSubmissionService.createOrReuse(
+        jobSubmissionService.submit(
             JobType.ANSWER_FEEDBACK,
             AttemptFeedbackPayload.RESOURCE,
             attemptId,
             AttemptFeedbackPayload(attemptId, question.setId, question.resumeId, question.targetJobId),
-            jobSubmissionService.fingerprint(JobType.ANSWER_FEEDBACK.name, attemptId),
         )
     }
 
@@ -258,7 +256,7 @@ class PracticeService(
             val score = row.feedback?.score
             val delta = if (score != null) previousScore?.let { score - it } else null
             if (score != null) previousScore = score
-            AttemptView(row.id, row.number, row.text, status, row.feedback, delta, job?.let(ActiveJob::from), row.createdAt)
+            AttemptView(row.id, row.number, row.text, status, row.feedback, delta, job?.let(LatestJob::from), row.createdAt)
         }
     }
 
@@ -285,11 +283,11 @@ class PracticeService(
         val questions = questions(userId, set.id)
         val job = backgroundJobStore.findLatestForResource(userId, RESOURCE, set.id, listOf(JobType.PRACTICE_QUESTIONS)).orElse(null)
         val status = when {
-            questions.any { it.origin == AI } -> PracticeSetStatus.READY
+            questions.any { it.origin == QuestionOrigin.AI } -> PracticeSetStatus.READY
             job?.status == JobStatus.FAILED -> PracticeSetStatus.FAILED
             else -> PracticeSetStatus.GENERATING
         }
-        return PracticeSetView(set.id, set.resumeId, set.targetJobId, set.mode, status, questions, job?.let(ActiveJob::from), set.createdAt, set.updatedAt)
+        return PracticeSetView(set.id, set.resumeId, set.targetJobId, set.mode, status, questions, job?.let(LatestJob::from), set.createdAt, set.updatedAt)
     }
 
     /** Locks the pair's rows against deletion and returns whether the resume is READY. */
@@ -313,7 +311,7 @@ class PracticeService(
         RowMapper { rs, _ ->
             SetRow(
                 rs.getObject("id", UUID::class.java), rs.getObject("resume_id", UUID::class.java),
-                rs.getObject("target_job_id", UUID::class.java), rs.getString("mode"),
+                rs.getObject("target_job_id", UUID::class.java), PracticeMode.valueOf(rs.getString("mode")),
                 rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(),
             )
         },
@@ -331,13 +329,11 @@ class PracticeService(
     )
 
     private data class SetRow(
-        val id: UUID, val resumeId: UUID, val targetJobId: UUID, val mode: String, val createdAt: Instant, val updatedAt: Instant,
+        val id: UUID, val resumeId: UUID, val targetJobId: UUID, val mode: PracticeMode, val createdAt: Instant, val updatedAt: Instant,
     )
 
     companion object {
         const val RESOURCE = "practice-set"
-        const val AI = "AI"
-        const val USER = "USER"
         const val MAX_USER_QUESTIONS = 10
     }
 }

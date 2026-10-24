@@ -9,6 +9,7 @@ import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobType
 import org.springframework.stereotype.Component
 
+/** Resolves exact stored inputs; an empty source list produces an empty result without an AI call. */
 @Component
 class ExperienceSuggestionsJobHandler(
     private val coachService: AiResumeCoachService,
@@ -23,13 +24,13 @@ class ExperienceSuggestionsJobHandler(
         if (run == null) {
             context.stage(JobStage.RETRIEVING_EXPERIENCE)
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
-            val jobDescription = documents.jobDescription().orElseThrow {
-                IllegalStateException("Experience suggestions ${payload.suggestionsId} have no target job description")
+            val targetJob = documents.targetJob().orElseThrow {
+                IllegalStateException("Experience suggestions ${payload.suggestionsId} have no target job")
             }
             val sources = suggestionsService.promptSources(context.userId(), payload.resumeId)
             context.stage(JobStage.MATCHING_EXPERIENCE)
             val result = if (sources.isEmpty()) ExperienceSuggestionsResult(emptyList())
-                else coachService.suggestExperiences(documents.resume(), jobDescription, sources)
+                else coachService.suggestExperiences(documents.resume(), targetJob, sources)
             run = ExperienceSuggestionsRun(result, sources.map { it.source.id }.sortedBy { it.toString() })
             context.saveRootCheckpoint(run, "experience-suggestions")
         }

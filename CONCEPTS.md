@@ -73,7 +73,7 @@ It holds queue messages, not jobs; the job's own row stays the source of truth f
 
 ### Idempotency key
 A client-chosen value sent in the `Idempotency-Key` request header so that a retried request returns the first request's response instead of acting twice.
-*Avoid:* request id, dedup key
+*Avoid:* request id, job dedup key
 
 It is not content deduplication. Without the header nothing is replayed. Reusing a key for a different request is rejected, and a key whose first request is still running is refused until it finishes.
 
@@ -82,6 +82,12 @@ A create request whose content matches a record the user already has, so the exi
 *Avoid:* replay, skipped, conflict
 
 It is decided by the content of the request, not by an Idempotency key, and it is not an error. Each create route has its own matching rule, and fields of the request that the existing record does not share are ignored.
+
+### Job dedup key
+The key under which `submit` reuses the user's in-flight (QUEUED/PROCESSING/RETRYING) Background job of the same type instead of creating another; by default it is the job type plus resource and ignores the payload.
+*Avoid:* idempotency key, duplicate submission
+
+It is not an Idempotency key, which replays a request response, or a Duplicate submission, which returns an existing record matched by content.
 
 ## AI
 

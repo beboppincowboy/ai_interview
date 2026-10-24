@@ -1,8 +1,8 @@
 package dev.jiaming.ai_interview.coach
 
 import dev.jiaming.ai_interview.experience.ExperienceSplitResult
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.practice.AnswerFeedbackResult
 import dev.jiaming.ai_interview.practice.PracticeQuestionDrafts
 import dev.jiaming.ai_interview.document.ResolvedDocument
@@ -12,6 +12,7 @@ import dev.jiaming.ai_interview.suggestions.SuggestionSourceInput
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.stereotype.Service
 
+/** Runs structured coaching calls; only `INVALID_RESPONSE` gets one repair attempt, and other provider failures propagate. */
 @Service
 class AiResumeCoachService(
     private val generationClient: StructuredGenerationClient,
@@ -20,45 +21,49 @@ class AiResumeCoachService(
     private val responseMapper: CoachResponseMapper,
     private val meterRegistry: MeterRegistry
 ) {
+    /** Uses job-fit RAG context and normalizes the model result; invalid structured output may be repaired once. */
     fun assessJobFit(input: CoachAnalysisInput): dev.jiaming.ai_interview.fit.JobFitResult {
         val context = ragContextService.jobFitContext(input)
         return responseMapper.normalizeJobFit(generateStructured(promptBuilder.buildJobFitPrompt(context), JobFitResponse::class.java))
     }
 
-    // ponytail: per-source budget only (KTD7); add a total prompt cap if users keep hundreds of sources.
-    fun suggestExperiences(resume: ResolvedDocument, jobDescription: ResolvedDocument, sources: List<SuggestionSourceInput>): ExperienceSuggestionsResult {
+    /** Resumes are retrieved against the target job; saved-experience text is supplied whole. */
+    fun suggestExperiences(resume: ResolvedDocument, targetJob: ResolvedDocument, sources: List<SuggestionSourceInput>): ExperienceSuggestionsResult {
         val texts = sources.map { input ->
             input.source to when (input) {
-                is SuggestionSourceInput.Resume -> ragContextService.suggestionSourceText(input.document, jobDescription)
+                is SuggestionSourceInput.Resume -> ragContextService.suggestionSourceText(input.document, targetJob)
                 is SuggestionSourceInput.Experience -> input.text
             }
         }
         val prompt = promptBuilder.buildExperienceSuggestionsPrompt(
-            ragContextService.suggestionSourceText(resume, jobDescription), jobDescription.normalizedText(), texts
+            ragContextService.suggestionSourceText(resume, targetJob), targetJob.normalizedText(), texts
         )
         return generateStructured(prompt, ExperienceSuggestionsResponse::class.java) {
             responseMapper.normalizeExperienceSuggestions(it, sources.map(SuggestionSourceInput::source))
         }
     }
 
+    /** Returns 3–8 valid question drafts; fewer than three triggers the single schema-repair attempt. */
     fun generatePracticeQuestions(input: CoachAnalysisInput): PracticeQuestionDrafts {
         val context = ragContextService.practiceQuestionContext(input)
         return generateStructured(promptBuilder.buildPracticeQuestionPrompt(context), PracticeQuestionsResponse::class.java,
             responseMapper::normalizePracticeQuestions)
     }
 
-    /** Scores a practice attempt against its question and the pair's resume and job description (KTD7). */
+    /** Scores a practice answer using the pair's RAG context; incomplete capture limits scoring to recorded words. */
     fun scorePracticeAnswer(input: CoachFeedbackInput): AnswerFeedbackResult {
         val context = ragContextService.feedbackContext(input)
         return generateStructured(promptBuilder.buildPracticeFeedbackPrompt(input, context), AnswerFeedbackResponse::class.java,
             responseMapper::normalizeFeedback)
     }
 
+    /** Scores resume text without retrieval; unmatched rewrites are removed and schema errors may be repaired once. */
     fun scoreResume(resumeText: String, jobTitle: String?): ResumeScoreResult = responseMapper.normalizeResumeScore(
         generateStructured(promptBuilder.buildResumeScorePrompt(resumeText, jobTitle), ResumeScoreDraftResponse::class.java),
         resumeText, jobTitle
     )
 
+    /** Splits pasted experience text; invalid required fields or month values trigger the single repair attempt. */
     fun splitExperience(text: String): ExperienceSplitResult = generateStructured(
         promptBuilder.buildExperienceSplitPrompt(text),
         ExperienceSplitResponse::class.java,
@@ -70,18 +75,18 @@ class AiResumeCoachService(
     private fun <T, R> generateStructured(prompt: String, responseType: Class<T>, normalize: (T) -> R): R {
         val firstOutput = generationClient.generateJson(prompt)
         try { return normalize(responseMapper.parse(firstOutput, responseType)) }
-        catch (firstFailure: GeminiException) {
-            if (firstFailure.code != GeminiErrorCode.INVALID_RESPONSE) throw firstFailure
-            meterRegistry.counter("ai.gemini.schema_repair", "outcome", "attempted").increment()
+        catch (firstFailure: AiProviderException) {
+            if (firstFailure.code != AiProviderErrorCode.INVALID_RESPONSE) throw firstFailure
+            meterRegistry.counter("ai.chat.schema_repair", "outcome", "attempted").increment()
             val parseError = firstFailure.cause?.message ?: firstFailure.message
             val repairedOutput = generationClient.generateJson(promptBuilder.buildRepairPrompt(prompt, firstOutput, parseError))
             try {
                 val repaired = normalize(responseMapper.parse(repairedOutput, responseType))
-                meterRegistry.counter("ai.gemini.schema_repair", "outcome", "succeeded").increment()
+                meterRegistry.counter("ai.chat.schema_repair", "outcome", "succeeded").increment()
                 return repaired
-            } catch (secondFailure: GeminiException) {
-                meterRegistry.counter("ai.gemini.schema_repair", "outcome", "failed").increment()
-                throw GeminiException(GeminiErrorCode.INVALID_RESPONSE, "Gemini response remained invalid after one schema repair", secondFailure, false)
+            } catch (secondFailure: AiProviderException) {
+                meterRegistry.counter("ai.chat.schema_repair", "outcome", "failed").increment()
+                throw AiProviderException(AiProviderErrorCode.INVALID_RESPONSE, "Model response remained invalid after one schema repair", secondFailure, false)
             }
         }
     }

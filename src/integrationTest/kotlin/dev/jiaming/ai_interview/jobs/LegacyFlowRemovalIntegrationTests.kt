@@ -86,8 +86,8 @@ class LegacyFlowRemovalIntegrationTests {
         assertThat(attempts.first().feedback!!.score).isEqualTo(74)
         val retried = practice.retryAttempt(failedAttempt)
         assertThat(retried.status).isEqualTo(AttemptStatus.PENDING)
-        assertThat(retried.activeJob!!.jobId).isNotEqualTo(failedJob)
-        assertThat(retried.activeJob!!.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(retried.latestJob!!.jobId).isNotEqualTo(failedJob)
+        assertThat(retried.latestJob!!.status).isEqualTo(JobStatus.QUEUED)
         assertThatThrownBy { practice.retryAttempt(scoredAttempt) }
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("ATTEMPT_NOT_FAILED") }
     }
@@ -127,7 +127,7 @@ class LegacyFlowRemovalIntegrationTests {
             jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(MAPPER), local, guard,
             PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), MAPPER
         )
-        return PracticeService(jdbc, local, submissions, guard, jobs, MAPPER, TransactionTemplate(DataSourceTransactionManager(source)))
+        return PracticeService(jdbc, local, submissions, jobs, MAPPER, TransactionTemplate(DataSourceTransactionManager(source)))
     }
 
     private fun insert(jdbc: JdbcTemplate, sql: String, vararg arguments: Any): UUID =

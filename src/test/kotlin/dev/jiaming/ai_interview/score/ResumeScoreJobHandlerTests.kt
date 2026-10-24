@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.score
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.jiaming.ai_interview.coach.Priority
 import dev.jiaming.ai_interview.coach.AiResumeCoachService
 import dev.jiaming.ai_interview.coach.AssessmentScores
 import dev.jiaming.ai_interview.jobs.BackgroundJob
@@ -74,6 +75,6 @@ class ResumeScoreJobHandlerTests {
 
     private fun score(jobTitle: String?) = ResumeScoreResult(
         81, AssessmentScores(82, 80, 79, 83, 81), "Strong platform experience.",
-        listOf(ResumeScoreFix(1, "Experience", "HIGH", "Add measured outcomes.")), emptyList(), jobTitle, Instant.now()
+        listOf(ResumeScoreFix(1, "Experience", Priority.HIGH, "Add measured outcomes.")), emptyList(), jobTitle, Instant.now()
     )
 }

@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RequestValidation
 import dev.jiaming.ai_interview.common.lockOwnerShared
 import dev.jiaming.ai_interview.common.sha256Hex
@@ -31,10 +30,10 @@ class VoiceSessionService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
 ) {
+    /** Returns the owner-scoped session view or 404. */
     fun get(sessionId: UUID): VoiceSessionView = find(localUserService.localUserId(), sessionId)?.view ?: notFound()
 
     /** Atomically spends one of the session's twelve Live token attempts before the external provider call. */
@@ -76,7 +75,7 @@ class VoiceSessionService(
     internal fun getForReport(userId: UUID, sessionId: UUID): VoiceSessionView =
         find(userId, sessionId)?.view ?: throw IllegalStateException("Voice report session $sessionId was not found for its job owner")
 
-    /** Starts a draft on a READY practice set with a copy of its first [MAX_QUESTIONS] AI questions in stored order. */
+    /** Starts a draft on a READY set with its first [MAX_QUESTIONS] AI questions in stored order; no AI questions gives 409. */
     fun create(practiceSetId: UUID): VoiceSessionView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -120,10 +119,7 @@ class VoiceSessionService(
         }
     }
 
-    /**
-     * Saves the reviewed transcript and starts its report job in one transaction (KTD6). An identical repeated Save
-     * returns the committed outcome; a different one after Save is a conflict. Save is accepted until the draft expires.
-     */
+    /** Saves a normalized transcript and starts one report job atomically until draft expiry; identical saves replay, changed saves conflict, and invalid/oversized answers are rejected. */
     fun save(sessionId: UUID, transcript: VoiceTranscript): VoiceSaveResult {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -144,11 +140,9 @@ class VoiceSessionService(
                 session.view.status == VoiceSessionStatus.EXPIRED ->
                     throw ApiRequestException(HttpStatus.CONFLICT, "VOICE_SESSION_EXPIRED", "The interview draft expired before it was saved")
                 else -> {
-                    requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-                    val job = jobSubmissionService.createOrReuse(
+                    val job = jobSubmissionService.submit(
                         JobType.VOICE_REPORT, VoiceReportPayload.RESOURCE, sessionId,
                         VoiceReportPayload(sessionId, session.view.resumeId, session.view.targetJobId),
-                        jobSubmissionService.fingerprint(JobType.VOICE_REPORT.name, sessionId),
                     )
                     jdbcTemplate.update(
                         """
@@ -164,7 +158,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Replaces a failed current report job while preserving the original Save and valid completed answers. */
+    /** Retries only the failed current report job with valid answer checkpoints; an existing report returns unchanged. */
     fun retryReport(sessionId: UUID): VoiceSessionView {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -188,15 +182,12 @@ class VoiceSessionService(
             if (payload.payloadVersion != VoiceReportPayload.CURRENT_VERSION || payload.voiceSessionId != sessionId ||
                 payload.resumeId != current.view.resumeId || payload.targetJobId != current.view.targetJobId) notRetryable()
 
-            requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-            val checkpoints = transferableCheckpoints(current.view, oldJob.resultPayload)
-            val replacement = jobSubmissionService.createOrReuseWithInitialResult(
+            val replacement = jobSubmissionService.submit(
                 JobType.VOICE_REPORT,
                 VoiceReportPayload.RESOURCE,
                 sessionId,
                 VoiceReportPayload(sessionId, current.view.resumeId, current.view.targetJobId),
-                jobSubmissionService.fingerprint(JobType.VOICE_REPORT.name, sessionId),
-                checkpoints,
+                initialCheckpoint = transferableCheckpoints(current.view, oldJob.resultPayload),
             )
             val updated = jdbcTemplate.update(
                 "UPDATE ai_interview_app.voice_sessions SET report = NULL, report_job_id = ? WHERE id = ? AND user_id = ? AND saved_at IS NOT NULL AND submission_job_id = ? AND report_job_id = ?",
@@ -207,7 +198,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Removes an unsaved draft. One statement, so a Save holding the row commits first and its saved row is kept. */
+    /** Deletes only an unsaved draft; missing sessions return 404, saved sessions conflict, and a save that commits first is kept. */
     fun discard(sessionId: UUID) {
         val userId = localUserService.localUserId()
         val deleted = jdbcTemplate.update(
@@ -219,7 +210,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Removes a session with its report jobs, their checkpoints and effects. */
+    /** Removes the owned session and its report jobs, checkpoints, and effects; missing sessions return 404. */
     fun delete(sessionId: UUID) {
         val userId = localUserService.localUserId()
         inTransaction {
@@ -239,7 +230,7 @@ class VoiceSessionService(
         }
     }
 
-    /** Unsaved drafts past their expiry hold no transcript; Save already rejects them, so they go (KTD5). */
+    /** Deletes expired unsaved drafts, which have no transcript; called by scheduled cleanup. */
     @Scheduled(fixedDelayString = "\${app.voice.draft-cleanup-interval-ms:3600000}")
     fun removeExpiredDrafts() {
         val removed = jdbcTemplate.update("DELETE FROM ai_interview_app.voice_sessions WHERE saved_at IS NULL AND draft_expires_at <= now()")

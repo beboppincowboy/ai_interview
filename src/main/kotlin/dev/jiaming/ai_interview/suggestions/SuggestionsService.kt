@@ -3,9 +3,8 @@ package dev.jiaming.ai_interview.suggestions
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.LocalUserService
-import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.lockOwnerShared
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobAcceptedResponse
 import dev.jiaming.ai_interview.jobs.JobSubmissionService
@@ -26,12 +25,12 @@ class SuggestionsService(
     private val jdbcTemplate: JdbcTemplate,
     private val localUserService: LocalUserService,
     private val jobSubmissionService: JobSubmissionService,
-    private val requestGuard: RedisRequestGuard,
     private val backgroundJobStore: BackgroundJobStore,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
     private val resumePersistenceService: ResumePersistenceService,
 ) {
+    /** Reads owner-scoped pair state; hides deleted/obsolete source items and marks results stale when source IDs change. */
     fun get(resumeId: UUID, targetJobId: UUID): SuggestionsView {
         val userId = localUserService.localUserId()
         requireOwnedInputs(userId, resumeId, targetJobId, lockRows = false, requireReady = false)
@@ -45,13 +44,14 @@ class SuggestionsService(
             })
         }
         val stale = stored != null && row.sourceIds.orEmpty().toSet() != current.keys
-        val activeJob = row?.id?.let { id ->
+        val latestJob = row?.id?.let { id ->
             backgroundJobStore.findLatestForResource(userId, RESOURCE, id, listOf(JobType.EXPERIENCE_SUGGESTIONS))
-                .map(ActiveJob::from).orElse(null)
+                .map(LatestJob::from).orElse(null)
         }
-        return SuggestionsView(resumeId, targetJobId, current.isNotEmpty(), stale, visible, row?.resultCreatedAt, activeJob)
+        return SuggestionsView(resumeId, targetJobId, current.isNotEmpty(), stale, visible, row?.resultCreatedAt, latestJob)
     }
 
+    /** Requires ready owned inputs and at least one source; otherwise returns 404/409 `NO_EXPERIENCE_SOURCES`. */
     fun run(resumeId: UUID, targetJobId: UUID): JobAcceptedResponse {
         jobSubmissionService.assertApiAvailable()
         val userId = localUserService.localUserId()
@@ -69,16 +69,14 @@ class SuggestionsService(
                     val suggestionsId = upsertAndLockSuggestions(userId, resumeId, targetJobId)
                     val fingerprint = jobSubmissionService.fingerprint(JobType.EXPERIENCE_SUGGESTIONS.name, suggestionsId)
                     val reusable = jobSubmissionService.findReusable(JobType.EXPERIENCE_SUGGESTIONS, fingerprint)
-                    if (reusable.isPresent) reusable.get() else {
-                        requestGuard.assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
-                        jobSubmissionService.createOrReuse(
-                            JobType.EXPERIENCE_SUGGESTIONS,
-                            RESOURCE,
-                            suggestionsId,
-                            ExperienceSuggestionsPayload(suggestionsId, resumeId, targetJobId),
-                            fingerprint,
-                        )
-                    }
+                    // Checked first so that rerunning active suggestions is not charged to the AI rate limit.
+                    if (reusable.isPresent) reusable.get() else jobSubmissionService.submit(
+                        JobType.EXPERIENCE_SUGGESTIONS,
+                        RESOURCE,
+                        suggestionsId,
+                        ExperienceSuggestionsPayload(suggestionsId, resumeId, targetJobId),
+                        dedupKey = fingerprint,
+                    )
                 })
             },
         )
@@ -97,6 +95,7 @@ class SuggestionsService(
         }, userId, resumeId, userId,
     )
 
+    /** Loads every current resume/experience source; resume variants retain full documents for later budget selection. */
     fun promptSources(userId: UUID, resumeId: UUID): List<SuggestionSourceInput> {
         val experiences = jdbcTemplate.query(
             "SELECT id, title, organization, start_date, end_date, description FROM ai_interview_app.experiences WHERE user_id = ?",

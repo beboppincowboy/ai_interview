@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { JobAccepted, JobStatusResponse, ResumeCreated, ResumeDetail, ResumeExtractionResult, TargetJobCreated } from "@/lib/api/types";
+import { apiRequest } from "@/lib/api/client";
+import type { ExperienceCreated, JobAccepted, JobStatusResponse, ResumeCreated, ResumeDetail, ResumeExtractionResult, TargetJobCreated } from "@/lib/api/types";
 import { createMockServer } from "@/mocks/server";
 import { createMockStore, type MockStoreOptions } from "@/mocks/store";
 import { errorOf, get, pollJobs, post, registerApiScenarios } from "./apiScenarios";
@@ -38,10 +39,18 @@ describe("mock API", () => {
     expect(upload).toMatchObject({ status: 202, body: { duplicate: false, resume: { status: "PROCESSING" } } });
 
     finishJobs();
-    const job = await get<JobStatusResponse<ResumeExtractionResult>>(`/api/jobs/${upload.body.resume.activeJob!.jobId}`);
+    const job = await get<JobStatusResponse<ResumeExtractionResult>>(`/api/jobs/${upload.body.resume.latestJob!.jobId}`);
     expect(job.status).toBe("SUCCEEDED");
     expect(job.result?.duplicateOf).toEqual({ id: saved.id, name: "Pasted" });
     expect(await errorOf(get(`/api/resumes/${upload.body.resume.id}`))).toMatchObject({ status: 404, code: "RESUME_NOT_FOUND" });
+  });
+
+  it("rejects an experience rename that duplicates another experience with EXPERIENCE_DUPLICATE", async () => {
+    const input = { organization: null, startDate: null, endDate: null, description: "Built the billing service." };
+    await post<ExperienceCreated>("/api/experiences", { ...input, title: "Existing role" });
+    const other = (await post<ExperienceCreated>("/api/experiences", { ...input, title: "Other role" })).experience;
+    const rename = apiRequest(`/api/experiences/${other.id}`, { method: "PATCH", body: { title: " existing   ROLE " }, retries: 0 });
+    expect(await errorOf(rename)).toMatchObject({ status: 409, code: "EXPERIENCE_DUPLICATE" });
   });
 
   it("returns the same resume at once when the same file is uploaded twice, and rejects other file types", () => {
@@ -105,7 +114,7 @@ describe("mock API", () => {
     const reloaded = createMockStore({ ...timing, storage: local });
     const detail: ResumeDetail = reloaded.getResume(body.resume.id);
     expect(detail.score).not.toBeNull();
-    expect(detail.activeJob?.jobId).toBe(scored.jobId);
+    expect(detail.latestJob?.jobId).toBe(scored.jobId);
     expect(reloaded.getJob(pending.jobId).status).toBe("QUEUED");
     finishJobs();
     expect(reloaded.getJob(pending.jobId).status).toBe("SUCCEEDED");

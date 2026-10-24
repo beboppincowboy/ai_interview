@@ -1,16 +1,17 @@
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ApiError, apiRequest } from "@/lib/api/client";
-import { isTerminal, type ActiveJob, type JobStatusResponse } from "@/lib/api/types";
+import { isTerminal, type LatestJob, type JobStatusResponse } from "@/lib/api/types";
 
 const POLL_INTERVAL_MS = 1_500;
 const POLL_CEILING_MS = 10 * 60_000;
 
+/** Cache key for one background job's polling response. */
 export function jobQueryKey(jobId: string) {
   return ["job", jobId] as const;
 }
 
-/** Polls a job until it is terminal or the time ceiling passes; `checkAgain` restarts polling. */
+/** Disabled without an ID; otherwise polls until terminal, a non-retryable error, or the ceiling and returns state plus `checkAgain`. */
 export function useJob<TResult = unknown>(
   jobId: string | null | undefined,
   { intervalMs = POLL_INTERVAL_MS, ceilingMs = POLL_CEILING_MS } = {}
@@ -52,14 +53,11 @@ export function useJob<TResult = unknown>(
   };
 }
 
-/**
- * Follows a resource's `activeJob`: polls while it runs and refreshes the resource's queries when it ends.
- * Returns the freshest view of the job (the poll result while running, otherwise the resource's copy).
- */
-export function useFollowJob(activeJob: ActiveJob | null | undefined, queryKeys: QueryKey[]) {
+/** Polls a nonterminal latest job, refreshes supplied query keys at termination, and returns its freshest view, timeout, and restart callback. */
+export function useFollowJob(latestJob: LatestJob | null | undefined, queryKeys: QueryKey[]) {
   const client = useQueryClient();
-  const running = Boolean(activeJob) && !isTerminal(activeJob!.status);
-  const poll = useJob(running ? activeJob!.jobId : null);
+  const running = Boolean(latestJob) && !isTerminal(latestJob!.status);
+  const poll = useJob(running ? latestJob!.jobId : null);
   const polledStatus = poll.job?.status;
 
   useEffect(() => {
@@ -69,6 +67,6 @@ export function useFollowJob(activeJob: ActiveJob | null | undefined, queryKeys:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, polledStatus, client]);
 
-  const job = running && poll.job ? { ...activeJob!, ...poll.job } : activeJob ?? null;
+  const job = running && poll.job ? { ...latestJob!, ...poll.job } : latestJob ?? null;
   return { job, timedOut: poll.timedOut, checkAgain: poll.checkAgain };
 }

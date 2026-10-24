@@ -5,7 +5,7 @@ import dev.jiaming.ai_interview.common.ApiExceptionHandler
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
-import dev.jiaming.ai_interview.jobs.ActiveJob
+import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobStatus
 import dev.jiaming.ai_interview.jobs.JobType
@@ -36,24 +36,36 @@ class PracticeControllerTests {
     @Test
     fun aNewSetReturns201WithTheGeneratingJobAndAnExistingSetReturns200() {
         Mockito.`when`(service.create(resumeId, targetJobId))
-            .thenReturn(PracticeSetCreation(set(PracticeSetStatus.GENERATING, emptyList()), true))
-            .thenReturn(PracticeSetCreation(set(PracticeSetStatus.READY, listOf(question("AI"))), false))
+            .thenReturn(PracticeSetCreated(set(PracticeSetStatus.GENERATING, emptyList()), duplicate = false))
+            .thenReturn(PracticeSetCreated(set(PracticeSetStatus.READY, listOf(question("AI"))), duplicate = true))
 
         mockMvc.perform(create("PRACTICE"))
             .andExpect(status().isCreated)
-            .andExpect(jsonPath("$.mode").value("PRACTICE"))
-            .andExpect(jsonPath("$.status").value("GENERATING"))
-            .andExpect(jsonPath("$.questions").isEmpty)
-            .andExpect(jsonPath("$.activeJob.jobType").value("PRACTICE_QUESTIONS"))
-            .andExpect(jsonPath("$.activeJob.stage").value("GENERATING_QUESTIONS"))
-            .andExpect(jsonPath("$.activeJob.maxAttempts").value(3))
+            .andExpect(jsonPath("$.duplicate").value(false))
+            .andExpect(jsonPath("$.practiceSet.mode").value("PRACTICE"))
+            .andExpect(jsonPath("$.practiceSet.status").value("GENERATING"))
+            .andExpect(jsonPath("$.practiceSet.questions").isEmpty)
+            .andExpect(jsonPath("$.practiceSet.latestJob.jobType").value("PRACTICE_QUESTIONS"))
+            .andExpect(jsonPath("$.practiceSet.latestJob.stage").value("GENERATING_QUESTIONS"))
+            .andExpect(jsonPath("$.practiceSet.latestJob.maxAttempts").value(3))
         mockMvc.perform(create("PRACTICE"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.status").value("READY"))
-            .andExpect(jsonPath("$.questions[0].order").value(1))
-            .andExpect(jsonPath("$.questions[0].origin").value("AI"))
-            .andExpect(jsonPath("$.questions[0].rationale").value("Reason"))
-            .andExpect(jsonPath("$.questions[0].attempts").isEmpty)
+            .andExpect(jsonPath("$.duplicate").value(true))
+            .andExpect(jsonPath("$.practiceSet.status").value("READY"))
+            .andExpect(jsonPath("$.practiceSet.questions[0].order").value(1))
+            .andExpect(jsonPath("$.practiceSet.questions[0].origin").value("AI"))
+            .andExpect(jsonPath("$.practiceSet.questions[0].rationale").value("Reason"))
+            .andExpect(jsonPath("$.practiceSet.questions[0].attempts").isEmpty)
+    }
+
+    @Test
+    fun anOmittedModeDefaultsToPractice() {
+        Mockito.`when`(service.create(resumeId, targetJobId))
+            .thenReturn(PracticeSetCreated(set(PracticeSetStatus.GENERATING, emptyList()), duplicate = false))
+
+        mockMvc.perform(post("/api/practice-sets").contentType(MediaType.APPLICATION_JSON).content("""{"resumeId":"$resumeId","targetJobId":"$targetJobId"}"""))
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.practiceSet.mode").value("PRACTICE"))
     }
 
     @Test
@@ -136,14 +148,14 @@ class PracticeControllerTests {
         .contentType(MediaType.APPLICATION_JSON).content("""{"text":"$text"}""")
 
     private fun question(origin: String) = if (origin == "AI") {
-        PracticeQuestionView(UUID.randomUUID(), 1, "AI", "Why Kafka?", "Reason", "Technical depth", listOf("trade-offs"))
+        PracticeQuestionView(UUID.randomUUID(), 1, QuestionOrigin.AI, "Why Kafka?", "Reason", "Technical depth", listOf("trade-offs"))
     } else {
-        PracticeQuestionView(UUID.randomUUID(), 2, "USER", "Why did you choose Kafka?", null, null, emptyList())
+        PracticeQuestionView(UUID.randomUUID(), 2, QuestionOrigin.USER, "Why did you choose Kafka?", null, null, emptyList())
     }
 
     private fun set(status: PracticeSetStatus, questions: List<PracticeQuestionView>) = PracticeSetView(
-        UUID.randomUUID(), resumeId, targetJobId, "PRACTICE", status, questions,
-        ActiveJob(UUID.randomUUID(), JobType.PRACTICE_QUESTIONS, JobStatus.PROCESSING, JobStage.GENERATING_QUESTIONS, 1, 3, null),
+        UUID.randomUUID(), resumeId, targetJobId, PracticeMode.PRACTICE, status, questions,
+        LatestJob(UUID.randomUUID(), JobType.PRACTICE_QUESTIONS, JobStatus.PROCESSING, JobStage.GENERATING_QUESTIONS, 1, 3, null),
         Instant.parse("2026-09-30T12:00:00Z"), Instant.parse("2026-09-30T12:00:00Z"),
     )
 }

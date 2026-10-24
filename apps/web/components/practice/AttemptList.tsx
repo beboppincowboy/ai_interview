@@ -7,20 +7,20 @@ function FailedAttempt({ setId, attempt }: { setId: string; attempt: Attempt }) 
   const retry = useRetryAttempt(setId);
   return (
     <div className="space-y-2">
-      <JobProgress job={attempt.activeJob} onRetry={() => retry.mutate(attempt.id)} retrying={retry.isPending} startError={retry.error} />
+      <JobProgress job={attempt.latestJob} onRetry={() => retry.mutate(attempt.id)} retrying={retry.isPending} startError={retry.error} />
       <blockquote className="border-l-2 pl-3 text-sm text-muted-foreground">{attempt.text}</blockquote>
     </div>
   );
 }
 
-/** The latest attempt in full, then earlier attempts collapsed to their score and change. */
+/** Expects attempts oldest first, renders nothing when empty, and shows the last fully while earlier entries expand for text and feedback. */
 export function AttemptList({ setId, attempts }: { setId: string; attempts: Attempt[] }) {
   const latest = attempts.at(-1);
   if (!latest) return null;
   const earlier = attempts.slice(0, -1).reverse();
   return (
     <div className="space-y-4">
-      {latest.status === "PENDING" ? <JobProgress job={latest.activeJob} /> : null}
+      {latest.status === "PENDING" ? <JobProgress job={latest.latestJob} /> : null}
       {latest.status === "FAILED" ? <FailedAttempt setId={setId} attempt={latest} /> : null}
       {latest.status === "SCORED" ? <Feedback attempt={latest} /> : null}
       {earlier.length ? (

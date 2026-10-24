@@ -16,7 +16,7 @@ import type {
   JobStatusResponse,
   JobType,
   PasteResumeRequest,
-  PracticeSet,
+  PracticeSet, PracticeSetCreated,
   Question,
   Resume,
   ResumeCreated,
@@ -30,17 +30,18 @@ import type {
   UpdateResumeRequest, VoiceSession, VoiceTranscript, VoiceSaveResult
 } from "@/lib/api/types";
 import * as fixtures from "./fixtures";
-import { activeJob, jobState, type JobFailure, type MockJob } from "./jobSimulator";
+import { latestJob, jobState, type JobFailure, type MockJob } from "./jobSimulator";
 
 export const STORAGE_KEY = "ai-interview:mock-db:v1";
 
+/** Mock HTTP response failure with status, API code, and message. */
 export class MockHttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
     super(message);
   }
 }
 
-type StoredResume = Omit<Resume, "latestScore" | "activeJob"> & {
+type StoredResume = Omit<Resume, "latestScore" | "latestJob"> & {
   text: string | null;
   fileHash: string | null;
   scores: ResumeScoreResult[];
@@ -49,9 +50,9 @@ type StoredResume = Omit<Resume, "latestScore" | "activeJob"> & {
 type StoredTargetJob = TargetJobDetail;
 type StoredPairResult<T> = { resumeId: string; targetJobId: string; result: T | null; createdAt: string | null; jobId: string | null };
 type StoredSuggestions = StoredPairResult<ExperienceSuggestionsResult> & { sourceIds: string[] };
-type StoredAttempt = Omit<Attempt, "activeJob" | "scoreDelta"> & { jobId: string };
+type StoredAttempt = Omit<Attempt, "latestJob" | "scoreDelta"> & { jobId: string };
 type StoredQuestion = Omit<Question, "attempts"> & { attempts: StoredAttempt[] };
-type StoredSet = Omit<PracticeSet, "activeJob" | "questions"> & { questions: StoredQuestion[]; jobId: string | null };
+type StoredSet = Omit<PracticeSet, "latestJob" | "questions"> & { questions: StoredQuestion[]; jobId: string | null };
 
 type Db = {
   resumes: Record<string, StoredResume>;
@@ -72,8 +73,11 @@ const emptyDb = (): Db => ({
 export type MockStoreOptions = {
   /** Browser: localStorage, so data survives reloads and is shared by tabs. Tests: omit for memory only. */
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  /** Clock used for timestamps and derived job state; defaults to Date.now. */
   now?: () => number;
+  /** Simulated queued duration; defaults to 400 ms. */
   queuedMs?: number;
+  /** Simulated duration per job stage; defaults to 1,200 ms. */
   stageMs?: number;
 };
 
@@ -94,6 +98,7 @@ function optionalText(value: unknown, field: string, max: number): string | null
   return requireText(value, field, 1, max);
 }
 
+/** Creates mock API data/actions; supplied browser storage persists it across reloads, otherwise each instance uses memory. */
 export function createMockStore(options: MockStoreOptions = {}) {
   const now = options.now ?? Date.now;
   const queuedMs = options.queuedMs ?? 400;
@@ -281,7 +286,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
         status: state.status,
         stage: state.stage,
         attempts: state.attempts,
-        maxAttempts: activeJob(job, now())!.maxAttempts,
+        maxAttempts: latestJob(job, now())!.maxAttempts,
         result: state.status === "SUCCEEDED" ? job.result : null,
         error: state.error,
         createdAt: iso(job.createdAt),
@@ -292,7 +297,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
     });
   }
 
-  const jobOf = (db: Db, jobId: string | null) => activeJob(jobId ? db.jobs[jobId] : undefined, now());
+  const jobOf = (db: Db, jobId: string | null) => latestJob(jobId ? db.jobs[jobId] : undefined, now());
 
   // ---- resumes (§3) ----------------------------------------------------------------------------
 
@@ -308,7 +313,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       latestScore: latest
         ? { overall: latest.overall, scoredAt: latest.scoredAt, stale: latest.jobTitle !== resume.jobTitle }
         : null,
-      activeJob: jobOf(db, resume.jobId),
+      latestJob: jobOf(db, resume.jobId),
       createdAt: resume.createdAt,
       updatedAt: resume.updatedAt
     };
@@ -470,10 +475,10 @@ export function createMockStore(options: MockStoreOptions = {}) {
     if (!Array.isArray(items) || items.length < 1 || items.length > 30) {
       throw new MockHttpError(400, "INVALID_REQUEST", "items must contain 1-30 experiences");
     }
-    const result: ExperienceBatchResult = { created: [], skipped: [] };
+    const result: ExperienceBatchResult = { created: [], duplicates: [] };
     for (const item of items.map(validateExperience)) {
       const existing = findExperienceDuplicate(db, item);
-      if (existing) result.skipped.push({ title: item.title, existingId: existing.id, existingTitle: existing.title });
+      if (existing) result.duplicates.push({ title: item.title, existingId: existing.id, existingTitle: existing.title });
       else result.created.push(addExperience(db, item, "LINKEDIN"));
     }
     return result;
@@ -482,7 +487,12 @@ export function createMockStore(options: MockStoreOptions = {}) {
   const listExperiences = () => tx((db) => ({ items: Object.values(db.experiences).sort(newestFirst) }));
   const renameExperience = (id: string, title: unknown): Experience => tx((db) => {
     const experience = requireExperience(db, id);
-    experience.title = requireText(title, "title", 1, 120);
+    const renamed = { ...experience, title: requireText(title, "title", 1, 120) };
+    const duplicate = findExperienceDuplicate(db, renamed);
+    if (duplicate && duplicate.id !== id) {
+      throw new MockHttpError(409, "EXPERIENCE_DUPLICATE", "An experience with this title and description already exists");
+    }
+    experience.title = renamed.title;
     return experience;
   });
 
@@ -520,7 +530,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       targetJobId,
       result: entry?.result ?? null,
       createdAt: entry?.createdAt ?? null,
-      activeJob: jobOf(db, entry?.jobId ?? null)
+      latestJob: jobOf(db, entry?.jobId ?? null)
     };
   });
 
@@ -546,7 +556,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       stale: Boolean(entry?.result) && entry.sourceIds.join() !== currentIds.join(),
       result,
       createdAt: entry?.createdAt ?? null,
-      activeJob: jobOf(db, entry?.jobId ?? null)
+      latestJob: jobOf(db, entry?.jobId ?? null)
     };
   });
 
@@ -569,7 +579,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
       const score = attempt.status === "SCORED" ? attempt.feedback?.score ?? null : null;
       const scoreDelta = score !== null && previousScore !== null ? score - previousScore : null;
       if (score !== null) previousScore = score;
-      return { ...attempt, scoreDelta, activeJob: jobOf(db, jobId) };
+      return { ...attempt, scoreDelta, latestJob: jobOf(db, jobId) };
     });
   }
 
@@ -578,7 +588,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
 
   function publicSet(db: Db, set: StoredSet): PracticeSet {
     const { jobId, questions, ...rest } = set;
-    return { ...rest, questions: questions.map((question) => publicQuestion(db, question)), activeJob: jobOf(db, jobId) };
+    return { ...rest, questions: questions.map((question) => publicQuestion(db, question)), latestJob: jobOf(db, jobId) };
   }
 
   function requireSet(db: Db, id: string) {
@@ -598,13 +608,14 @@ export function createMockStore(options: MockStoreOptions = {}) {
   }
 
   const createPracticeSet = (input: { resumeId?: unknown; targetJobId?: unknown; mode?: unknown }):
-    { status: 200 | 201; body: PracticeSet } => tx((db) => {
-    if (input.mode !== "PRACTICE") throw new MockHttpError(400, "INVALID_REQUEST", "mode must be PRACTICE");
+    { status: 200 | 201; body: PracticeSetCreated } => tx((db) => {
+    // An omitted mode defaults to PRACTICE, as on the server.
+    if (input.mode !== undefined && input.mode !== "PRACTICE") throw new MockHttpError(400, "INVALID_REQUEST", "mode is invalid");
     const resumeId = String(input.resumeId ?? "");
     const targetJobId = String(input.targetJobId ?? "");
     requirePair(db, resumeId, targetJobId);
     const existing = Object.values(db.sets).find((set) => set.resumeId === resumeId && set.targetJobId === targetJobId);
-    if (existing) return { status: 200, body: publicSet(db, existing) };
+    if (existing) return { status: 200, body: { practiceSet: publicSet(db, existing), duplicate: true } };
     requireReadyResume(db, resumeId);
     const at = iso();
     const set: StoredSet = {
@@ -613,7 +624,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
     };
     db.sets[set.id] = set;
     set.jobId = startJob(db, "PRACTICE_QUESTIONS", { resumeId, targetJobId, practiceSetId: set.id }).id;
-    return { status: 201, body: publicSet(db, set) };
+    return { status: 201, body: { practiceSet: publicSet(db, set), duplicate: false } };
   });
 
   const getPracticeSet = (id: string): PracticeSet => tx((db) => publicSet(db, requireSet(db, id)));
@@ -714,12 +725,12 @@ export function createMockStore(options: MockStoreOptions = {}) {
     if (new TextEncoder().encode(normalized).length > 64 * 1024) throw new MockHttpError(400, "TRANSCRIPT_TOO_LARGE", "The transcript is too large");
     if (session.transcript) {
       if (JSON.stringify(session.transcript) !== normalized) throw new MockHttpError(409, "VOICE_SESSION_ALREADY_SAVED", "This interview was already saved");
-      return { session, replayed: true };
+      return { session, duplicate: true };
     }
     if (session.status === "EXPIRED") throw new MockHttpError(409, "VOICE_SESSION_EXPIRED", "The interview draft expired before it was saved");
     const job = startJob(db, "VOICE_REPORT", { resumeId: session.resumeId, targetJobId: session.targetJobId, voiceSessionId: id });
     Object.assign(session, { status: "SAVED", transcript, savedAt: iso(), submissionJobId: job.id, reportJobId: job.id });
-    return { session, replayed: false };
+    return { session, duplicate: false };
   });
 
   const retryVoiceReport = (id: string) => tx((db) => {
@@ -884,6 +895,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
   };
 }
 
+/** Mock API methods that mutate/read resources and simulate background-job effects. */
 export type MockStore = ReturnType<typeof createMockStore>;
 
 function newestFirst(a: { createdAt: string }, b: { createdAt: string }) {

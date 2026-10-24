@@ -1,4 +1,4 @@
-package dev.jiaming.ai_interview.interview
+package dev.jiaming.ai_interview.targetjob
 
 import dev.jiaming.ai_interview.common.ContentHasher
 import dev.jiaming.ai_interview.common.lockOwnerExclusive
@@ -14,28 +14,34 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.Optional
 import java.util.UUID
 
+/** Stores target jobs (table `job_descriptions`) with their RAG chunks, and loads them as [ResolvedDocument]s. */
 @Service
-class JobDescriptionPersistenceService(
+class TargetJobPersistenceService(
     private val jdbcTemplate: JdbcTemplate,
     private val normalizer: ResumeTextNormalizer,
     private val chunker: SectionAwareTextChunker,
     private val contentHasher: ContentHasher,
 ) {
+    /**
+     * Saves raw [text] as a new target job unless the user already has one with the same normalized text; then the
+     * existing one is returned unchanged ([name] ignored) with `created = false`. Throws IllegalArgumentException on blank text.
+     */
     @Transactional
-    fun findOrCreateTargetJob(userId: UUID, name: String, jobDescription: String): TargetJobDocumentSave =
-        findOrCreate(userId, jobDescription, name)
+    fun findOrCreateTargetJob(userId: UUID, name: String, text: String): TargetJobDocumentSave =
+        findOrCreate(userId, text, name)
 
-    fun findDocument(userId: UUID, jobDescriptionId: UUID): Optional<ResolvedDocument> = queryDocument(
+    /** The user's target job with its chunks; empty when it does not exist or belongs to another user. */
+    fun findDocument(userId: UUID, targetJobId: UUID): Optional<ResolvedDocument> = queryDocument(
         """
             SELECT id, normalized_text, content_hash
             FROM ai_interview_app.job_descriptions
             WHERE id = ? AND user_id = ?
         """.trimIndent(),
-        jobDescriptionId,
+        targetJobId,
         userId,
     )
 
-    fun findDocumentByContent(userId: UUID, contentHash: String, normalizedText: String): Optional<ResolvedDocument> =
+    private fun findDocumentByContent(userId: UUID, contentHash: String, normalizedText: String): Optional<ResolvedDocument> =
         queryDocument(
             """
                 SELECT id, normalized_text, content_hash
@@ -49,15 +55,15 @@ class JobDescriptionPersistenceService(
             normalizedText,
         )
 
-    private fun findOrCreate(userId: UUID, jobDescription: String, name: String): TargetJobDocumentSave {
-        val normalizedText = normalizer.normalize(jobDescription)
-        if (normalizedText.isBlank()) throw IllegalArgumentException("Job description text is required")
+    private fun findOrCreate(userId: UUID, text: String, name: String): TargetJobDocumentSave {
+        val normalizedText = normalizer.normalize(text)
+        if (normalizedText.isBlank()) throw IllegalArgumentException("Target job text is required")
         val contentHash = contentHasher.sha256(normalizedText)
         jdbcTemplate.lockOwnerExclusive(userId)
         val existing = findDocumentByContent(userId, contentHash, normalizedText)
         if (existing.isPresent) return TargetJobDocumentSave(existing.get(), false)
 
-        val jobDescriptionId = UUID.randomUUID()
+        val targetJobId = UUID.randomUUID()
         jdbcTemplate.update(
             """
                 INSERT INTO ai_interview_app.job_descriptions (
@@ -65,10 +71,10 @@ class JobDescriptionPersistenceService(
                 )
                 VALUES (?, ?, ?, ?, ?, ?, '[]'::jsonb)
             """.trimIndent(),
-            jobDescriptionId,
+            targetJobId,
             userId,
             name,
-            jobDescription,
+            text,
             normalizedText,
             contentHash,
         )
@@ -81,14 +87,14 @@ class JobDescriptionPersistenceService(
                     VALUES (?, ?, ?, ?, ?, jsonb_build_object('sourceType', 'job_description', 'contextId', ?))
                 """.trimIndent(),
                 UUID.randomUUID(),
-                jobDescriptionId,
+                targetJobId,
                 chunk.index,
                 chunk.section,
                 chunk.content,
                 RagContextId.forChunk("job_description", chunk.section, chunk.index),
             )
         }
-        return TargetJobDocumentSave(findDocument(userId, jobDescriptionId).orElseThrow(), true)
+        return TargetJobDocumentSave(findDocument(userId, targetJobId).orElseThrow(), true)
     }
 
     private fun queryDocument(sql: String, vararg arguments: Any): Optional<ResolvedDocument> =
@@ -105,7 +111,7 @@ class JobDescriptionPersistenceService(
             )
         }, *arguments).stream().findFirst()
 
-    private fun findChunks(jobDescriptionId: UUID): List<DocumentChunk> = jdbcTemplate.query(
+    private fun findChunks(targetJobId: UUID): List<DocumentChunk> = jdbcTemplate.query(
         """
             SELECT chunk_index, section, content
             FROM ai_interview_app.job_description_chunks
@@ -120,7 +126,7 @@ class JobDescriptionPersistenceService(
                 RagContextId.forChunk("job_description", rs.getString("section"), rs.getInt("chunk_index")),
             )
         },
-        jobDescriptionId,
+        targetJobId,
     )
 
 }

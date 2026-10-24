@@ -31,8 +31,9 @@ Status meanings:
   `code` is SCREAMING_SNAKE and stable. `message` is for logs. The UI maps codes to its own copy.
 - **Idempotency:** every `POST` accepts the existing `Idempotency-Key` header. The same key with the same body
   returns the first response (for job submissions, `reused: true`). The same key with a different body returns
-  `409 CONFLICT`. The web app sends one key per user action: its own automatic network retries reuse the key,
-  and a user pressing Retry sends a new key.
+  `409 CONFLICT`. The web app sends one key per `POST` user action: its own automatic network retries reuse the
+  key, and a user pressing Retry sends a new key. `GET` is retried without a key. `PATCH` and `DELETE` carry no
+  key and are never retried automatically; a transient failure surfaces to the user.
 - **Rate limits (existing Redis guard):** every request that starts an AI job, including retries and re-scores,
   counts against the AI limit (default 12 per 60 s per client). Uploads count against the upload limit
   (default 20 per 60 s). Over the limit returns `429 RATE_LIMITED`.
@@ -41,7 +42,8 @@ Status meanings:
 
 ### 1.1 Shared shapes
 
-**`ActiveJob`**: the latest background job for a resource. It is `null` when no job has run. It is not cleared
+**`LatestJob`**: the newest background job for a resource, in any status. It can be `SUCCEEDED` or `FAILED`, so check
+`status` before showing progress. It is `null` only when no job was ever submitted for the resource. It is not cleared
 when the job ends, so the UI can show the last failure after a reload.
 
 ```json
@@ -152,7 +154,7 @@ kept and marked stale (section 6), not deleted.
   "originalFilename": "resume.pdf",
   "status": "READY",
   "latestScore": { "overall": 72, "scoredAt": "2026-09-28T21:30:00Z", "stale": false },
-  "activeJob": null,
+  "latestJob": null,
   "createdAt": "2026-09-28T21:28:00Z",
   "updatedAt": "2026-09-28T21:30:00Z"
 }
@@ -166,7 +168,7 @@ kept and marked stale (section 6), not deleted.
 | `originalFilename` | string or null | Null for pasted text. |
 | `status` | `PROCESSING` \| `READY` \| `FAILED` | `PROCESSING` while `RESUME_EXTRACTION` runs. Pasted resumes start `READY`. |
 | `latestScore` | object or null | `stale` is true when `jobTitle` changed after that score. |
-| `activeJob` | `ActiveJob` or null | The latest `RESUME_EXTRACTION` or `RESUME_SCORE` job. |
+| `latestJob` | `LatestJob` or null | The latest `RESUME_EXTRACTION` or `RESUME_SCORE` job. |
 
 **`ResumeDetail`** = `Resume` plus:
 
@@ -190,9 +192,10 @@ Multipart form:
 | `jobTitle` | no | ≤100 chars. |
 
 - **Today:** returns `202` with `JobAccepted` and has no `name` or `jobTitle`.
-- **New:** returns `202` with `ResumeCreated`. `resume.status` is `PROCESSING` and `resume.activeJob` is the
+- **New:** returns `202` with `ResumeCreated`. `resume.status` is `PROCESSING` and `resume.latestJob` is the
   `RESUME_EXTRACTION` job.
-- If the file bytes match a saved resume, returns `200` with `duplicate: true` and starts no job.
+- If the file bytes match a saved resume, returns `200` with `duplicate: true` and the saved resume, and starts no
+  job. Dedup key: the file's bytes (SHA-256). `name` and `jobTitle` of the request are ignored.
 - If the extracted text matches a different saved resume, the extraction job still ends `SUCCEEDED`. Its result
   is `{ "resumeId": "<new id>", "duplicateOf": { "id": "…", "name": "…" } }` and the new resume is removed. The UI
   then shows the duplicate notice, and `GET` of the new ID returns `404`.
@@ -212,7 +215,8 @@ Multipart form:
 - `name`: 1–80 chars, required.
 - `text`: 100–50,000 chars, required.
 - Returns `201` with `ResumeCreated` and `resume.status: "READY"`. No extraction job runs.
-- A duplicate (same normalized text) returns `200` with `duplicate: true`.
+- A duplicate returns `200` with `duplicate: true` and the saved resume. Dedup key: the normalized text. `name`
+  and `jobTitle` of the request are ignored.
 - Errors: `400 INVALID_REQUEST`.
 
 ### 3.3 `GET /api/resumes` — new
@@ -278,7 +282,8 @@ Body: `{}`. Starts a `RESUME_SCORE` job and returns `202` with `JobAccepted`.
 - `name`: 1–80 chars.
 - `text`: 100–20,000 chars.
 - Returns `201` with `TargetJobCreated`.
-- The same normalized text returns `200` with `duplicate: true` and the existing item (R4).
+- A duplicate returns `200` with `duplicate: true` and the existing item unchanged (R4). Dedup key: the
+  normalized text. The request's `name` is ignored; the UI tells the user and offers a rename.
 - Errors: `400 INVALID_REQUEST`.
 
 ### 4.2 `GET /api/target-jobs` — existing
@@ -333,7 +338,8 @@ this job, and cancels their in-flight jobs.
 
 Body: `ExperienceInput`. Returns `201` with `{ "experience": Experience, "duplicate": boolean }`.
 
-- A duplicate (same normalized title and description) returns `200` with `duplicate: true`.
+- A duplicate returns `200` with `duplicate: true` and the saved experience. Dedup key: title plus description,
+  whitespace-collapsed and case-insensitive. `organization`, `startDate` and `endDate` of the request are ignored.
 - Errors: `400 INVALID_REQUEST`.
 
 ### 5.2 `POST /api/experiences/linkedin-split` — existing
@@ -357,12 +363,13 @@ Body: `{ "items": ExperienceInput[] }`, 1–30 items, with `source` recorded as 
 ```json
 {
   "created": [ { "id": "…", "title": "…" } ],
-  "skipped": [ { "title": "…", "existingId": "…", "existingTitle": "…" } ]
+  "duplicates": [ { "title": "…", "existingId": "…", "existingTitle": "…" } ]
 }
 ```
 
-`created` holds full `Experience` objects (shortened above). Items already saved are skipped, not duplicated
-(R3). The UI shows each skipped item with a note.
+`created` holds full `Experience` objects (shortened above). `duplicates` lists the items that matched a saved
+experience: they are not stored and are not an error (R3). The UI shows each duplicate with a note. A duplicate item
+is dropped whole: none of its fields (organization, dates) update the saved experience.
 
 A list outside 1–30 items returns `400 INVALID_REQUEST` with a message naming `items`. Duplicate matching is
 per user and uses whitespace-collapsed, case-insensitive title and description; organization and dates do not
@@ -376,7 +383,7 @@ Returns `200` with `{ "items": Experience[] }`.
 
 Body: `{ "title": string }`. Returns `200` with the updated `Experience`. Renaming recomputes the duplicate
 hash from the normalized title and unchanged description. Errors: `400 INVALID_REQUEST` for an invalid title,
-`404 EXPERIENCE_NOT_FOUND` for a missing or other user's experience, and `409 CONFLICT` if another owned
+`404 EXPERIENCE_NOT_FOUND` for a missing or other user's experience, and `409 EXPERIENCE_DUPLICATE` if another owned
 experience already has the same normalized title and description.
 
 ### 5.6 `GET /api/experiences/{experienceId}/delete-impact` — new
@@ -404,7 +411,7 @@ the page can render "not run yet". Either ID missing returns `404 RESUME_NOT_FOU
   "targetJobId": "…",
   "result": null,
   "createdAt": null,
-  "activeJob": null
+  "latestJob": null
 }
 ```
 
@@ -420,7 +427,7 @@ When a fit has succeeded, `result` is a `JobFitResult` (section 8.2).
   "stale": false,
   "result": null,
   "createdAt": null,
-  "activeJob": null
+  "latestJob": null
 }
 ```
 
@@ -468,7 +475,7 @@ Body: `{}`. Starts `EXPERIENCE_SUGGESTIONS` and returns `202` with `JobAccepted`
   "mode": "PRACTICE",
   "status": "GENERATING",
   "questions": [],
-  "activeJob": { "jobId": "…", "jobType": "PRACTICE_QUESTIONS", "status": "PROCESSING", "stage": "GENERATING_QUESTIONS", "attempts": 1, "maxAttempts": 3, "error": null },
+  "latestJob": { "jobId": "…", "jobType": "PRACTICE_QUESTIONS", "status": "PROCESSING", "stage": "GENERATING_QUESTIONS", "attempts": 1, "maxAttempts": 3, "error": null },
   "createdAt": "…",
   "updatedAt": "…"
 }
@@ -512,7 +519,7 @@ Body: `{}`. Starts `EXPERIENCE_SUGGESTIONS` and returns `202` with `JobAccepted`
   "status": "SCORED",
   "feedback": null,
   "scoreDelta": 12,
-  "activeJob": null,
+  "latestJob": null,
   "createdAt": "…"
 }
 ```
@@ -522,19 +529,21 @@ Body: `{}`. Starts `EXPERIENCE_SUGGESTIONS` and returns `202` with `JobAccepted`
 | `status` | `PENDING` \| `SCORED` \| `FAILED`. |
 | `feedback` | `AnswerFeedbackResult` (section 8.2). Null unless `SCORED`. |
 | `scoreDelta` | This score minus the previous `SCORED` attempt's score. Null for the first scored attempt or when not scored. |
-| `activeJob` | The `ANSWER_FEEDBACK` job. On failure its `error` holds the reason; the attempt text is kept for retry (R17). |
+| `latestJob` | The `ANSWER_FEEDBACK` job. On failure its `error` holds the reason; the attempt text is kept for retry (R17). |
 
 ### 7.1 `POST /api/practice-sets` — new
 
-Body: `{ "resumeId": "…", "targetJobId": "…", "mode": "PRACTICE" }`.
+Body: `{ "resumeId": "…", "targetJobId": "…", "mode": "PRACTICE" }`. `mode` is optional and defaults to `PRACTICE`.
 
 - Returns the pair's set right away (R14):
   - `201` when it is new, with `status: "GENERATING"`, empty `questions` and the `PRACTICE_QUESTIONS` job as
-    `activeJob`.
-  - `200` when the set already exists.
+    `latestJob`.
+  - `200` when the set already exists, with `duplicate: true` and that set; no job starts.
+- Body of both: `PracticeSetCreated`, `{ "practiceSet": PracticeSet, "duplicate": boolean }`. Dedup key: the
+  `resumeId` and `targetJobId` pair. No request field is ignored.
 - The AI chooses between 3 and 8 questions from the job description (R15).
 - Errors:
-  - `400 INVALID_REQUEST`: `mode` other than `PRACTICE`. Voice mode is out of scope.
+  - `400 INVALID_REQUEST`: `mode` other than `PRACTICE` (message `mode is invalid`). Voice mode is out of scope.
   - `404 RESUME_NOT_FOUND`, `404 TARGET_JOB_NOT_FOUND`.
   - `409 RESUME_NOT_READY`.
   - `429 RATE_LIMITED`: only when a new set starts a job.
@@ -564,7 +573,7 @@ Errors:
 Body: `{ "text": string }`, 1–4,000 chars after trimming.
 
 - Creates the next numbered attempt with `status: "PENDING"` and starts `ANSWER_FEEDBACK`.
-- Returns `201` with `Attempt`, whose `activeJob` is set.
+- Returns `201` with `Attempt`, whose `latestJob` is set.
 - Several questions may have pending attempts at once (R18).
 - Errors:
   - `400 ANSWER_EMPTY`.
@@ -751,39 +760,66 @@ them out of 5.3.
 
 ## 10. Error codes
 
-Existing codes stay unchanged. The UI maps every code below. AI-provider codes (`GEMINI_*`) remain as they are;
-the UI never shows the code or the provider name.
+This table lists every code a client can receive, in an API error body or in `JobError.code`. A given failure has
+one code in both places: library and storage failures map to codes in one place, shared by the API exception
+handler and the job failure classifier. AI-provider codes keep their historical `GEMINI_*` prefix whatever the
+provider; the UI never shows the code or the provider name. `ContractFreezeTests` pins this list.
 
-| Code | HTTP | Status | Meaning |
+| Code | HTTP | Status | Trigger |
 |---|---|---|---|
-| `INVALID_REQUEST` | 400 | existing | Validation failed. The message names the field. |
-| `ANSWER_EMPTY` | 400 | new | The answer is blank after trimming. |
+| `INVALID_REQUEST` | 400 | existing | Validation failed. The message names the field. A body that cannot be read (malformed JSON, or a value outside a closed set such as `mode`) gets this code too, with `<field> is invalid` when the field is known. |
+| `ANSWER_EMPTY` | 400 | new | The answer is blank after trimming, or every voice answer is blank. |
 | `ANSWER_TOO_LONG` | 400 | new | The answer is over 4,000 chars. |
+| `TRANSCRIPT_TOO_LARGE` | 400 | new | A saved voice transcript is over the byte limit. |
+| `RESUME_REFERENCE_REQUIRED` | 400 | new | Job only: the background job carries no resume reference. |
 | `NOT_FOUND` | 404 | existing | Generic missing resource. |
-| `RESUME_NOT_FOUND` | 404 | existing code, new use | |
-| `TARGET_JOB_NOT_FOUND` | 404 | new | Replaces `JOB_DESCRIPTION_NOT_FOUND`. |
+| `RESUME_NOT_FOUND` | 404 | existing code, new use | Missing or other user's resume, in a request or when a job resolves its references. |
+| `TARGET_JOB_NOT_FOUND` | 404 | new | Missing target job, in a request or when a job resolves its references. Replaces `JOB_DESCRIPTION_NOT_FOUND`. |
 | `EXPERIENCE_NOT_FOUND` | 404 | new | |
 | `PRACTICE_SET_NOT_FOUND` | 404 | new | |
 | `QUESTION_NOT_FOUND` | 404 | new | |
 | `ATTEMPT_NOT_FOUND` | 404 | new | |
 | `JOB_NOT_FOUND` | 404 | existing | |
-| `CONFLICT` | 409 | existing | An idempotency key was reused with a different body, or an experience rename would duplicate another owned item. |
-| `RESUME_NOT_READY` | 409 | existing code, new use | |
+| `VOICE_SESSION_NOT_FOUND` | 404 | new | Missing or other user's voice session. |
+| `VOICE_QUESTION_NOT_FOUND` | 404 | new | The question is not part of the voice session. |
+| `CONFLICT` | 409 | existing | An `Idempotency-Key` was reused with a different body. |
+| `EXPERIENCE_DUPLICATE` | 409 | new | An experience rename would match another owned experience's title and description. |
+| `RESUME_NOT_READY` | 409 | existing code, new use | The resume has not finished processing, in a request or when a job resolves its references. |
 | `NO_EXPERIENCE_SOURCES` | 409 | new | |
 | `PRACTICE_SET_NOT_READY` | 409 | new | |
 | `PRACTICE_SET_NOT_FAILED` | 409 | new | |
 | `QUESTION_LIMIT_REACHED` | 409 | new | |
 | `ANSWER_UNCHANGED` | 409 | new | |
 | `ATTEMPT_NOT_FAILED` | 409 | new | |
+| `VOICE_SESSION_EXPIRED` | 409 | new | The unsaved voice draft expired. |
+| `VOICE_SESSION_NOT_DRAFT` | 409 | new | A connection was requested for a saved voice session. |
+| `VOICE_SESSION_ALREADY_SAVED` | 409 | new | The session was already saved with a different transcript. |
+| `VOICE_RUN_EXPIRED` | 409 | new | The voice run's recording time has ended. |
+| `VOICE_TOKEN_BUDGET_EXHAUSTED` | 409 | new | The voice session reached its connection limit. |
+| `VOICE_REPORT_NOT_RETRYABLE` | 409 | new | Only a failed current voice report can be retried. |
 | `UPLOAD_TOO_LARGE` | 413 | existing | |
 | `UNSUPPORTED_FILE_TYPE` | 415 | new | |
-| `UNPROCESSABLE_CONTENT`, `RESUME_EXTRACTION_FAILED` | 422 | existing | |
-| `RATE_LIMITED` | 429 | existing | |
-| `SERVICE_UNAVAILABLE`, `RESUME_PARSER_BUSY` | 503 | existing | |
-| `INTERNAL_ERROR`, `REQUEST_FAILED` | 500 | existing | |
+| `UNPROCESSABLE_CONTENT` | 422 | existing | |
+| `RESUME_EXTRACTION_FAILED` | 422 | existing | The resume text could not be extracted. |
+| `RATE_LIMITED` | 429 | existing | Too many requests in the rate-limit window. |
+| `VOICE_TOKEN_RATE_LIMITED` | 429 | new | The voice provider is at its usage limit. |
+| `INTERNAL_ERROR` | 500 | existing | Unexpected server error. |
+| `REQUEST_FAILED` | 500 | existing | A library failure with no more specific code. |
+| `STORAGE_UNAVAILABLE` | 502 | new | Object storage (S3) failed; retryable on a job. |
+| `VOICE_TOKEN_UNAVAILABLE` | 502 | new | The voice provider could not be reached. |
+| `GEMINI_NOT_CONFIGURED`, `GEMINI_RATE_LIMITED`, `GEMINI_TIMEOUT`, `GEMINI_UPSTREAM_ERROR`, `GEMINI_SAFETY`, `GEMINI_RECITATION`, `GEMINI_MAX_TOKENS`, `GEMINI_EMPTY_RESPONSE`, `GEMINI_INVALID_RESPONSE` | 502 | existing | The AI provider failed; the prefix is historical. |
+| `SERVICE_UNAVAILABLE` | 503 | existing | A dependency or feature is temporarily unavailable. |
+| `RESUME_PARSER_BUSY` | 503 | existing | The resume parser is saturated; retryable on a job. |
+| `VOICE_DISABLED` | 503 | new | Spoken interviews are disabled. |
+| `VOICE_TOKEN_TIMEOUT` | 503 | new | The voice provider timed out. |
+| `PROCESSING_ERROR` | job only | existing | Unclassified job failure; retryable. |
+| `WORKER_LEASE_EXPIRED` | job only | existing | A `RETRYING` job whose worker lease expired before it finished. |
+| `RETRIES_EXHAUSTED_<code>` | job only | existing | A `FAILED` job whose last retryable failure had `<code>`, one of the codes above. |
+| `RETRIES_EXHAUSTED_DLQ` | job only | existing | A `FAILED` job that reached the dead-letter queue past its attempt limit. |
+| `RETRIES_EXHAUSTED_WORKER_LEASE_EXPIRED` | job only | existing | A `FAILED` job whose last worker lease expired with no attempts left. |
 
-`JobError.code` values: the AI and processing codes above, `PROCESSING_ERROR`, `RETRIES_EXHAUSTED_*` and
-`HTTP_<status>` (all existing). `retryable` follows the existing `JobFailureClassifier`.
+`JobError.retryable` follows `JobFailureClassifier`: AI codes carry their own flag, and other codes are retryable
+for HTTP 408, 429 and 5xx.
 
 ## 11. Backend obligations
 
@@ -799,9 +835,19 @@ The frontend assumes each of these. The backend plan must implement and test the
      is still running, which returns that running job.
 4. **Cascade delete** as described in 3.7, 4.6 and 5.7. `delete-impact` counts match what the delete removes.
 5. **Duplicate resolution.**
-   - Applies to resumes (file bytes, then normalized text), target jobs (normalized text) and experiences
-     (normalized title plus description).
-   - A duplicate returns the existing item with `duplicate: true` and creates nothing.
+   - A duplicate returns the existing item with `duplicate: true` (`200`) and writes nothing. It is not an
+     error. A batch lists its duplicate items under `duplicates` instead.
+   - Dedup is per user and decided by content, not by `Idempotency-Key`:
+
+     | Route | Dedup key | Request fields ignored on a duplicate |
+     |---|---|---|
+     | `POST /api/resumes` | File bytes (SHA-256); later the normalized text, reported by the extraction job (3.1) | `name`, `jobTitle` |
+     | `POST /api/resumes/paste` | Normalized text | `name`, `jobTitle` |
+     | `POST /api/target-jobs` | Normalized text | `name` |
+     | `POST /api/experiences` | Title plus description, whitespace-collapsed, case-insensitive | `organization`, `startDate`, `endDate` |
+     | `POST /api/experiences/batch` | Same as `POST /api/experiences`, per item | The whole item (listed in `duplicates`) |
+     | `POST /api/practice-sets` | `resumeId` plus `targetJobId` | none |
+     | `POST /api/voice-sessions/{id}/save` | The session plus its normalized transcript; a different transcript for a saved session is `409 VOICE_SESSION_ALREADY_SAVED` | none |
 6. **General score inputs.** Resume text and optional job title only. No job description and no seniority. The
    seniority input is removed from prompts.
 7. **Rewrites use placeholders** instead of invented numbers or scope.
@@ -826,8 +872,8 @@ The frontend assumes each of these. The backend plan must implement and test the
    - No empty answer and no answer identical to the latest attempt.
    - Failed attempts keep their text.
    - `scoreDelta` compares against the previous `SCORED` attempt.
-10. **Active jobs.** Every resource that owns jobs returns its latest job as `activeJob`, so the UI can resume
-    polling after a reload.
+10. **Latest jobs.** Every resource that owns jobs returns its newest job, in any status, as `latestJob`, so the UI
+    can resume polling after a reload.
 11. **One practice set per pair**, created by 7.1 and never regenerated once `READY`.
 
 ## 12. Removed endpoints

@@ -14,7 +14,7 @@ import java.util.UUID
 import org.springframework.stereotype.Component
 import kotlin.math.roundToInt
 
-/** Scores the immutable, reviewed transcript and writes its single report through the job effect fence. */
+/** Scores nonblank reviewed answers, reuses valid answer checkpoints, and writes one current report through the job effect fence. */
 @Component
 class VoiceReportJobHandler(
     private val coachService: AiResumeCoachService,
@@ -58,7 +58,7 @@ class VoiceReportJobHandler(
             }
             val feedback = savedCheckpoint?.feedback ?: coachService.scorePracticeAnswer(
                 CoachFeedbackInput(
-                    documents.resume(), documents.jobDescription(), question.text, question.category,
+                    documents.resume(), documents.targetJob(), question.text, question.category,
                     question.expectedSignals, answer.answerText, answer.incomplete,
                 ),
             ).also { result ->

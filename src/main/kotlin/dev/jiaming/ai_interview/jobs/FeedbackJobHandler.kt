@@ -8,6 +8,7 @@ import dev.jiaming.ai_interview.document.DocumentReferenceResolver
 import dev.jiaming.ai_interview.practice.AnswerFeedbackResult
 import dev.jiaming.ai_interview.practice.PracticeService
 
+/** Loads an attempt and its exact stored documents, reuses a saved feedback checkpoint, then materializes feedback. */
 @Component
 class FeedbackJobHandler(
     private val coachService: AiResumeCoachService,
@@ -23,7 +24,7 @@ class FeedbackJobHandler(
             val attempt = practiceService.attemptForScoring(context.userId(), payload.attemptId)
                 ?: throw IllegalStateException("Attempt ${payload.attemptId} was not found for its job owner")
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
-            coachService.scorePracticeAnswer(CoachFeedbackInput(documents.resume(), documents.jobDescription(),
+            coachService.scorePracticeAnswer(CoachFeedbackInput(documents.resume(), documents.targetJob(),
                 attempt.questionText, attempt.category, attempt.expectedSignals, attempt.text))
                 .also { context.saveRootCheckpoint(it, "answer-feedback") }
         }

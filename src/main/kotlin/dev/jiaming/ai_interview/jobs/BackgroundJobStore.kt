@@ -14,18 +14,20 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
+/** Persists background jobs and their state, checkpoints, leases, dispatch markers, and retained payloads. */
 @Service
 class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val objectMapper: ObjectMapper) {
+    /** Inserts only when the unique fingerprint constraint allows it; empty means a conflicting job exists. */
     @Transactional
     fun createIfAbsent(userId: UUID, jobType: JobType, resourceType: String?, resourceId: UUID?,
                        requestPayload: JsonNode?, requestFingerprint: String?, maxAttempts: Int): Optional<BackgroundJob> =
-        createIfAbsentWithInitialResult(userId, jobType, resourceType, resourceId, requestPayload, requestFingerprint, maxAttempts, null)
+        createIfAbsentWithInitialCheckpoint(userId, jobType, resourceType, resourceId, requestPayload, requestFingerprint, maxAttempts, null)
 
-    /** Creates a fresh retry job with previously validated answer checkpoints already durable. */
+    /** Creates a fresh job with a checkpoint already durable, such as validated answer scores carried over on retry. */
     @Transactional
-    fun createIfAbsentWithInitialResult(userId: UUID, jobType: JobType, resourceType: String?, resourceId: UUID?,
-                                        requestPayload: JsonNode?, requestFingerprint: String?, maxAttempts: Int,
-                                        initialResultPayload: JsonNode?): Optional<BackgroundJob> {
+    fun createIfAbsentWithInitialCheckpoint(userId: UUID, jobType: JobType, resourceType: String?, resourceId: UUID?,
+                                            requestPayload: JsonNode?, requestFingerprint: String?, maxAttempts: Int,
+                                            initialCheckpointPayload: JsonNode?): Optional<BackgroundJob> {
         val jobId = UUID.randomUUID()
         val insertedIds = jdbcTemplate.query("""
             INSERT INTO ai_interview_app.background_jobs (
@@ -34,15 +36,17 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             ) VALUES (?, ?, ?, ?, ?, 'QUEUED', 'QUEUED', ?::jsonb, ?::jsonb, ?, ?, now())
             ON CONFLICT DO NOTHING RETURNING id
             """, { rs, _ -> rs.getObject("id", UUID::class.java) }, jobId, userId, jobType.name,
-            resourceType, resourceId, json(requestPayload), initialResultPayload?.let(::json), requestFingerprint, maxAttempts)
+            resourceType, resourceId, json(requestPayload), initialCheckpointPayload?.let(::json), requestFingerprint, maxAttempts)
         return Optional.ofNullable(insertedIds.firstOrNull()?.let { findById(it).orElse(null) })
     }
 
+    /** Finds the newest matching active job; succeeded and failed jobs are not reusable. */
     fun findReusable(userId: UUID, jobType: JobType, requestFingerprint: String): Optional<BackgroundJob> = queryOne("""
         SELECT $JOB_COLUMNS FROM ai_interview_app.background_jobs
         WHERE user_id = ? AND job_type = ? AND request_fingerprint = ? AND status IN ('QUEUED', 'PROCESSING', 'RETRYING')
         ORDER BY created_at DESC LIMIT 1
         """, userId, jobType.name, requestFingerprint)
+    /** Finds the newest job in any status for this owner/resource, optionally limited to job types. */
     fun findLatestForResource(userId: UUID, resourceType: String, resourceId: UUID, jobTypes: Collection<JobType> = emptyList()): Optional<BackgroundJob> {
         val typeFilter = if (jobTypes.isEmpty()) "" else "AND job_type IN (${jobTypes.joinToString { "'${it.name}'" }})"
         return queryOne("""
@@ -61,23 +65,29 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             ORDER BY resource_id, created_at DESC
             """, { rs, _ -> mapJob(rs) }, userId, resourceType, *resourceIds.toTypedArray()).associateBy { it.resourceId!! }
     }
+    /** Deletes jobs for the supplied resources and returns the number of rows removed. */
     fun deleteByResources(resourceType: String, resourceIds: Collection<UUID>): Int {
         if (resourceIds.isEmpty()) return 0
         return jdbcTemplate.update("DELETE FROM ai_interview_app.background_jobs WHERE resource_type = ? AND resource_id IN (${resourceIds.joinToString { "?" }})",
             resourceType, *resourceIds.toTypedArray())
     }
+    /** Finds a job only when both its ID and owner match. */
     fun findForUser(jobId: UUID, userId: UUID): Optional<BackgroundJob> = queryOne("SELECT $JOB_COLUMNS FROM ai_interview_app.background_jobs WHERE id = ? AND user_id = ?", jobId, userId)
+    /** Unscoped internal lookup by ID; callers must establish authorization separately. */
     fun findById(jobId: UUID): Optional<BackgroundJob> = queryOne("SELECT $JOB_COLUMNS FROM ai_interview_app.background_jobs WHERE id = ?", jobId)
+    /** Returns due QUEUED/RETRYING job IDs with no dispatch marker, oldest-created first. */
     fun findUndispatched(limit: Int): List<UUID> = jdbcTemplate.query("""
         SELECT id FROM ai_interview_app.background_jobs
         WHERE enqueued_at IS NULL AND status IN ('QUEUED', 'RETRYING') AND run_after <= now()
         ORDER BY created_at LIMIT ?
         """, { rs, _ -> rs.getObject("id", UUID::class.java) }, limit)
+    /** Sets the dispatch marker only for a queued or retrying job. */
     fun markEnqueued(jobId: UUID) {
         jdbcTemplate.update("UPDATE ai_interview_app.background_jobs SET enqueued_at = now(), updated_at = now() WHERE id = ? AND status IN ('QUEUED', 'RETRYING')", jobId)
     }
 
     @Transactional
+    /** Claims a due queued/retrying job or steals an expired processing lease below maxAttempts; empty means not claimable. */
     fun claim(jobId: UUID, leaseToken: UUID, leaseDuration: Duration): Optional<BackgroundJob> = Optional.ofNullable(jdbcTemplate.query("""
         UPDATE ai_interview_app.background_jobs
         SET status = 'PROCESSING', attempts = attempts + 1, started_at = COALESCE(started_at, now()),
@@ -88,31 +98,39 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
         RETURNING $JOB_COLUMNS
         """, { rs, _ -> mapJob(rs) }, leaseToken, leaseDuration.seconds, jobId).firstOrNull())
 
+    /** Extends only a matching live processing lease; false means the lease is no longer owned. */
     fun extendLease(jobId: UUID, leaseToken: UUID, leaseDuration: Duration): Boolean = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET lease_expires_at = now() + (? * interval '1 second'), updated_at = now()
         WHERE id = ? AND status = 'PROCESSING' AND lease_token = ?
         """, leaseDuration.seconds, jobId, leaseToken) == 1
+    /** Updates the processing stage or throws [JobLeaseLostException] when the lease token is no longer valid. */
     fun updateStage(jobId: UUID, leaseToken: UUID, stage: JobStage) {
         val updated = jdbcTemplate.update("UPDATE ai_interview_app.background_jobs SET stage = ?, updated_at = now() WHERE id = ? AND status = 'PROCESSING' AND lease_token = ?", stage.name, jobId, leaseToken)
         assertLeaseOwned(jobId, updated)
     }
+    /** Saves an interim result (null becomes `{}`) or throws [JobLeaseLostException] when the lease is lost. */
     fun checkpointResult(jobId: UUID, leaseToken: UUID, resultPayload: JsonNode?) {
         val updated = jdbcTemplate.update("UPDATE ai_interview_app.background_jobs SET result_payload = ?::jsonb, updated_at = now() WHERE id = ? AND status = 'PROCESSING' AND lease_token = ?", json(resultPayload), jobId, leaseToken)
         assertLeaseOwned(jobId, updated)
     }
+    /** Marks success, sets stage COMPLETED, and uses the checkpoint when resultPayload is null; false means lease loss. */
     fun markSucceeded(jobId: UUID, leaseToken: UUID, resultPayload: JsonNode?) = markTerminal(jobId, leaseToken, JobStatus.SUCCEEDED, resultPayload, null, null, false)
+    /** Marks permanent failure; false means the supplied lease token no longer owns the job. */
     fun markFailed(jobId: UUID, leaseToken: UUID, errorCode: String, errorMessage: String?) =
         markTerminal(jobId, leaseToken, JobStatus.FAILED, null, errorCode, errorMessage, false)
+    /** Schedules a retry and returns false if the job is no longer processing under this lease. */
     fun markRetrying(jobId: UUID, leaseToken: UUID, errorCode: String, errorMessage: String?, delay: Duration): Boolean = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET status = 'RETRYING', last_error = ?, error_code = ?, retryable = true,
             run_after = now() + (? * interval '1 second'), enqueued_at = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = now()
         WHERE id = ? AND status = 'PROCESSING' AND lease_token = ?
         """, truncate(errorMessage), errorCode, delay.seconds, jobId, leaseToken) == 1
+    /** Releases a processing job to immediate RETRYING without consuming an attempt; false means lease loss. */
     fun releaseForRedispatch(jobId: UUID, leaseToken: UUID): Boolean = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET status = 'RETRYING', attempts = GREATEST(0, attempts - 1), run_after = now(),
             enqueued_at = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = now()
         WHERE id = ? AND status = 'PROCESSING' AND lease_token = ?
         """, jobId, leaseToken) == 1
+    /** Requeues an eligible, non-exhausted job on the dead-letter queue for the dispatcher; false means ineligible, terminal, or still leased. */
     fun prepareDlqRecovery(jobId: UUID): Boolean = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET status = CASE WHEN status = 'PROCESSING' THEN 'RETRYING' ELSE status END,
             run_after = now(), enqueued_at = NULL,
@@ -120,12 +138,14 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             lease_expires_at = CASE WHEN status = 'PROCESSING' THEN NULL ELSE lease_expires_at END, updated_at = now()
         WHERE id = ? AND attempts < max_attempts AND (status IN ('QUEUED', 'RETRYING') OR (status = 'PROCESSING' AND lease_expires_at < now()))
         """, jobId) == 1
+    /** Marks an eligible exhausted job on the dead-letter queue failed with `RETRIES_EXHAUSTED_DLQ`; false means ineligible or still leased. */
     fun markExhaustedFromDlq(jobId: UUID): Boolean = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET status = 'FAILED',
             last_error = 'SQS moved the job message to the dead-letter queue after retries were exhausted',
             error_code = 'RETRIES_EXHAUSTED_DLQ', retryable = false, completed_at = now(), lease_token = NULL, lease_expires_at = NULL, updated_at = now()
         WHERE id = ? AND attempts >= max_attempts AND status IN ('QUEUED', 'PROCESSING', 'RETRYING') AND (status <> 'PROCESSING' OR lease_expires_at < now())
         """, jobId) == 1
+    /** Retries jobs with expired leases or fails those at maxAttempts, returning the rows transitioned. */
     fun reapExpiredLeases(): Int = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET status = CASE WHEN attempts >= max_attempts THEN 'FAILED' ELSE 'RETRYING' END,
             last_error = 'Worker lease expired before the job completed',
@@ -136,6 +156,7 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             lease_token = NULL, lease_expires_at = NULL, updated_at = now()
         WHERE status = 'PROCESSING' AND lease_expires_at < now()
         """)
+    /** Redacts request payloads to reference IDs and clears results for old terminal jobs; returns rows changed. */
     fun clearExpiredPayloads(retentionDays: Int): Int = jdbcTemplate.update("""
         UPDATE ai_interview_app.background_jobs SET request_payload = jsonb_strip_nulls(jsonb_build_object(
             'payloadVersion', request_payload -> 'payloadVersion',

@@ -27,7 +27,7 @@ beforeEach(() => {
 async function readySet() {
   const resume = store.pasteResume({ name: "Backend", text: RESUME_TEXT }).body.resume;
   const job = store.createTargetJob({ name: "Acme", text: JOB_TEXT }).body.targetJob;
-  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body;
+  const set = store.createPracticeSet({ resumeId: resume.id, targetJobId: job.id, mode: "PRACTICE" }).body.practiceSet;
   await new Promise((resolve) => setTimeout(resolve, 40));
   return store.getPracticeSet(set.id);
 }
@@ -255,7 +255,7 @@ it("enforces the 64 KiB UTF-8 boundary including transcript metadata", async () 
 
 it("blocks Start while generation is pending or failed and provides generation retry", async () => {
   const set = await readySet();
-  server.use(http.get("*/api/practice-sets/:id", () => HttpResponse.json({ ...set, status: "FAILED", questions: [], activeJob: { id: "generation", status: "FAILED", stage: "GENERATE", attempts: 1, maxAttempts: 3, error: { code: "AI_UNAVAILABLE", message: "Generation failed", retryable: true } } })));
+  server.use(http.get("*/api/practice-sets/:id", () => HttpResponse.json({ ...set, status: "FAILED", questions: [], latestJob: { id: "generation", status: "FAILED", stage: "GENERATE", attempts: 1, maxAttempts: 3, error: { code: "AI_UNAVAILABLE", message: "Generation failed", retryable: true } } })));
   renderRoute(`/voice/${set.id}`);
   expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Start interview" })).not.toBeInTheDocument();

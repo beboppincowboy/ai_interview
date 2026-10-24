@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.history
 
 import dev.jiaming.ai_interview.common.LocalUserService
+import dev.jiaming.ai_interview.jobs.JobStatus
 import java.sql.ResultSet
 import java.time.Instant
 import java.util.UUID
@@ -11,7 +12,7 @@ import org.springframework.stereotype.Service
 @JvmRecord data class VoiceSessionHistory(
     val id: UUID, val practiceSetId: UUID, val resumeId: UUID, val resumeName: String,
     val targetJobId: UUID, val targetJobName: String, val savedAt: Instant,
-    val selectedCount: Int, val answeredCount: Int, val overallScore: Int?, val reportJobId: UUID, val reportStatus: String,
+    val selectedCount: Int, val answeredCount: Int, val overallScore: Int?, val reportJobId: UUID, val reportStatus: JobStatus,
 )
 @JvmRecord data class ResumeHistory(val id: UUID, val name: String, val scores: List<ScorePoint>)
 @JvmRecord data class ScorePoint(val overall: Int, val scoredAt: Instant)
@@ -50,7 +51,7 @@ class HistoryService(private val jdbcTemplate: JdbcTemplate, private val localUs
             rs.uuid("id"), rs.uuid("practice_set_id"), rs.uuid("resume_id"), rs.getString("resume_name"),
             rs.uuid("target_job_id"), rs.getString("target_job_name"), rs.getTimestamp("saved_at").toInstant(),
             rs.getInt("selected_count"), rs.getInt("answered_count"), rs.getObject("overall_score", Int::class.javaObjectType),
-            rs.uuid("report_job_id"), rs.getString("report_status"),
+            rs.uuid("report_job_id"), JobStatus.valueOf(rs.getString("report_status")),
         ) }, userId,
     )
 

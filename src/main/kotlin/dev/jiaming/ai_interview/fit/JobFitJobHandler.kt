@@ -11,6 +11,7 @@ import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobType
 import org.springframework.stereotype.Component
 
+/** Resolves the job's stored resume and target job, checkpoints fit analysis, then materializes it. */
 @Component
 class JobFitJobHandler(
     private val coachService: AiResumeCoachService,
@@ -24,10 +25,10 @@ class JobFitJobHandler(
         var result = context.rootCheckpoint(JobFitResult::class.java, "fitScore")
         if (result == null) {
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
-            val jobDescription = documents.jobDescription().orElseThrow {
-                IllegalStateException("Job fit ${payload.fitId} has no target job description")
+            val targetJob = documents.targetJob().orElseThrow {
+                IllegalStateException("Job fit ${payload.fitId} has no target job")
             }
-            result = coachService.assessJobFit(CoachAnalysisInput(documents.resume(), java.util.Optional.of(jobDescription)))
+            result = coachService.assessJobFit(CoachAnalysisInput(documents.resume(), java.util.Optional.of(targetJob)))
             context.saveRootCheckpoint(result, "job-fit")
         }
         context.materializeJobFit(payload.fitId, result)

@@ -1,11 +1,11 @@
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABELS } from "@/lib/api/jobLabels";
-import type { ActiveJob } from "@/lib/api/types";
+import type { LatestJob } from "@/lib/api/types";
 import { friendlyError } from "@/lib/errorMessages";
 
 type Props = {
-  job: ActiveJob | null;
+  job: LatestJob | null;
   timedOut?: boolean;
   onCheckAgain?: () => void;
   onRetry?: () => void;
@@ -14,7 +14,7 @@ type Props = {
   startError?: unknown;
 };
 
-/** Progress, retrying, timed-out and failed states for one AI step. Renders nothing once the job succeeded. */
+/** Shows progress/recovery for a job; null or succeeded jobs render nothing unless starting failed. The `retrying` prop disables a user retry. */
 export function JobProgress({ job, timedOut, onCheckAgain, onRetry, retrying, startError }: Props) {
   const failed = job?.status === "FAILED" || Boolean(startError);
   if (failed) {

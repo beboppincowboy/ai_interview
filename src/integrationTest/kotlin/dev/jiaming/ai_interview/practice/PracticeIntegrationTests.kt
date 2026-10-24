@@ -10,7 +10,7 @@ import dev.jiaming.ai_interview.common.LocalUserService
 import dev.jiaming.ai_interview.common.RedisRequestGuard
 import dev.jiaming.ai_interview.common.RedisUsageProperties
 import dev.jiaming.ai_interview.common.RuntimeModeProperties
-import dev.jiaming.ai_interview.interview.JobDescriptionPersistenceService
+import dev.jiaming.ai_interview.targetjob.TargetJobPersistenceService
 import dev.jiaming.ai_interview.jobs.BackgroundJobStore
 import dev.jiaming.ai_interview.jobs.JobDispatcher
 import dev.jiaming.ai_interview.jobs.JobEffectMaterializationService
@@ -69,28 +69,28 @@ class PracticeIntegrationTests {
         }
 
         assertThat(responses.map { it.statusCode.value() }).containsExactlyInAnyOrder(201, 200)
-        assertThat(responses.map { it.body!!.id }.distinct()).hasSize(1)
-        val created = responses.single { it.statusCode.value() == 201 }.body!!
+        assertThat(responses.map { it.body!!.practiceSet.id }.distinct()).hasSize(1)
+        assertThat(responses.map { it.body!!.duplicate }).containsExactlyInAnyOrder(false, true)
+        val created = responses.single { it.statusCode.value() == 201 }.body!!.practiceSet
         assertThat(created.status).isEqualTo(PracticeSetStatus.GENERATING)
         assertThat(created.questions).isEmpty()
-        assertThat(created.activeJob?.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(created.latestJob?.status).isEqualTo(JobStatus.QUEUED)
         assertThat(count("practice_sets")).isEqualTo(1)
         assertThat(count("background_jobs")).isEqualTo(1)
         Mockito.verify(guard, Mockito.times(1)).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
 
-        val job = jobs.findById(created.activeJob!!.jobId).orElseThrow()
+        val job = jobs.findById(created.latestJob!!.jobId).orElseThrow()
         assertThat(job.resourceType).isEqualTo(PracticeService.RESOURCE)
         assertThat(job.resourceId).isEqualTo(created.id)
         assertThat(JobInputRefs.from(job)).isEqualTo(JobInputRefs(resumeId, targetJobId, created.id, null))
     }
 
     @Test
-    fun voiceModeNotReadyResumesAndForeignOrUnknownInputsCreateNothing() {
+    fun notReadyResumesAndForeignOrUnknownInputsCreateNothing() {
         val resumeId = insertResume()
         val targetJobId = insertTargetJob()
         val other = insertUser()
 
-        expectCode("INVALID_REQUEST") { controller.create(CreatePracticeSetRequest(resumeId, targetJobId, "VOICE")) }
         expectCode("RESUME_NOT_READY") { practice.create(insertResume(status = "PENDING"), targetJobId) }
         expectCode("RESUME_NOT_FOUND") { practice.create(insertResume(user = other), targetJobId) }
         expectCode("RESUME_NOT_FOUND") { practice.create(UUID.randomUUID(), targetJobId) }
@@ -119,18 +119,18 @@ class PracticeIntegrationTests {
     @Test
     fun generatedQuestionsMakeTheSetReadyInOrderAndAreSavedOnlyOnce() {
         val set = createSet()
-        val jobId = set.activeJob!!.jobId
+        val jobId = set.latestJob!!.jobId
 
         finishGeneration(set.id, 3)
         finishGeneration(set.id, 3, jobId = jobId, alreadyFinished = true)
 
         val ready = practice.get(set.id)
         assertThat(ready.status).isEqualTo(PracticeSetStatus.READY)
-        assertThat(ready.activeJob?.status).isEqualTo(JobStatus.SUCCEEDED)
+        assertThat(ready.latestJob?.status).isEqualTo(JobStatus.SUCCEEDED)
         assertThat(ready.questions.map { it.order }).containsExactly(1, 2, 3)
         assertThat(ready.questions.map { it.text }).containsExactly("Question 1?", "Question 2?", "Question 3?")
         assertThat(ready.questions).allSatisfy {
-            assertThat(it.origin).isEqualTo("AI")
+            assertThat(it.origin).isEqualTo(QuestionOrigin.AI)
             assertThat(it.rationale).isNotBlank()
             assertThat(it.expectedSignals).containsExactly("signal")
             assertThat(it.attempts).isEmpty()
@@ -140,7 +140,8 @@ class PracticeIntegrationTests {
 
         val again = controller.create(request(set.resumeId, set.targetJobId))
         assertThat(again.statusCode.value()).isEqualTo(200)
-        assertThat(again.body!!.id).isEqualTo(set.id)
+        assertThat(again.body!!.duplicate).isTrue()
+        assertThat(again.body!!.practiceSet.id).isEqualTo(set.id)
         assertThat(count("background_jobs")).isEqualTo(1)
         expectCode("PRACTICE_SET_NOT_FAILED") { practice.retry(set.id) }
     }
@@ -148,31 +149,31 @@ class PracticeIntegrationTests {
     @Test
     fun aFailedGenerationIsFailedUntilRetryStartsANewJobAndUserQuestionsFollowTheAiOnes() {
         val set = createSet()
-        val firstJob = set.activeJob!!.jobId
+        val firstJob = set.latestJob!!.jobId
         expectCode("PRACTICE_SET_NOT_FAILED") { practice.retry(set.id) }
         expectCode("PRACTICE_SET_NOT_READY") { practice.addQuestion(set.id, "A question while generating?") }
 
         failGeneration(set.id)
         val failed = practice.get(set.id)
         assertThat(failed.status).isEqualTo(PracticeSetStatus.FAILED)
-        assertThat(failed.activeJob?.status).isEqualTo(JobStatus.FAILED)
-        assertThat(failed.activeJob?.error?.code).isEqualTo("GEMINI_INVALID_RESPONSE")
+        assertThat(failed.latestJob?.status).isEqualTo(JobStatus.FAILED)
+        assertThat(failed.latestJob?.error?.code).isEqualTo("GEMINI_INVALID_RESPONSE")
         val userQuestion = practice.addQuestion(set.id, "How do you test retries?")
-        assertThat(userQuestion.origin).isEqualTo("USER")
+        assertThat(userQuestion.origin).isEqualTo(QuestionOrigin.USER)
         assertThat(userQuestion.order).isEqualTo(1)
 
         Mockito.clearInvocations(guard)
         val retried = practice.retry(set.id)
         assertThat(retried.status).isEqualTo(PracticeSetStatus.GENERATING)
-        assertThat(retried.activeJob!!.jobId).isNotEqualTo(firstJob)
-        assertThat(retried.activeJob!!.status).isEqualTo(JobStatus.QUEUED)
+        assertThat(retried.latestJob!!.jobId).isNotEqualTo(firstJob)
+        assertThat(retried.latestJob!!.status).isEqualTo(JobStatus.QUEUED)
         Mockito.verify(guard).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
         expectCode("PRACTICE_SET_NOT_FAILED") { practice.retry(set.id) }
 
         finishGeneration(set.id, 3)
         val ready = practice.get(set.id)
         assertThat(ready.questions.map { it.origin to it.order })
-            .containsExactly("AI" to 1, "AI" to 2, "AI" to 3, "USER" to 4)
+            .containsExactly(QuestionOrigin.AI to 1, QuestionOrigin.AI to 2, QuestionOrigin.AI to 3, QuestionOrigin.USER to 4)
         assertThat(ready.questions.last().id).isEqualTo(userQuestion.id)
         assertThat(practice.addQuestion(set.id, "What would you change next?").order).isEqualTo(5)
     }
@@ -183,7 +184,7 @@ class PracticeIntegrationTests {
         repeat(10) { practice.addQuestion(set.id, "My own question number $it?") }
 
         expectCode("QUESTION_LIMIT_REACHED") { practice.addQuestion(set.id, "One question too many?") }
-        assertThat(practice.get(set.id).questions.count { it.origin == "USER" }).isEqualTo(10)
+        assertThat(practice.get(set.id).questions.count { it.origin == QuestionOrigin.USER }).isEqualTo(10)
     }
 
     @Test
@@ -198,7 +199,7 @@ class PracticeIntegrationTests {
             }
             start.countDown()
             calls.map { call ->
-                try { call.get(10, TimeUnit.SECONDS).origin } catch (exception: ExecutionException) {
+                try { call.get(10, TimeUnit.SECONDS).origin.name } catch (exception: ExecutionException) {
                     (exception.cause as ApiRequestException).code()
                 }
             }
@@ -208,7 +209,7 @@ class PracticeIntegrationTests {
 
         assertThat(outcomes).containsExactlyInAnyOrder("USER", "QUESTION_LIMIT_REACHED")
         val questions = practice.get(set.id).questions
-        assertThat(questions.count { it.origin == "USER" }).isEqualTo(10)
+        assertThat(questions.count { it.origin == QuestionOrigin.USER }).isEqualTo(10)
         assertThat(questions.map { it.order }).containsExactlyElementsOf(1..13)
     }
 
@@ -239,8 +240,8 @@ class PracticeIntegrationTests {
 
     private fun createSet(resumeId: UUID = insertResume(), targetJobId: UUID = insertTargetJob()): PracticeSetView {
         val creation = practice.create(resumeId, targetJobId)
-        assertThat(creation.created).isTrue()
-        return creation.set
+        assertThat(creation.duplicate).isFalse()
+        return creation.practiceSet
     }
 
     private fun readySet(resumeId: UUID = insertResume(), targetJobId: UUID = insertTargetJob()): PracticeSetView {
@@ -250,7 +251,7 @@ class PracticeIntegrationTests {
     }
 
     // Plays the worker's part: claim the latest job, save the drafts under the lease, then succeed with the handler's result.
-    private fun finishGeneration(setId: UUID, questionCount: Int, jobId: UUID = practice.get(setId).activeJob!!.jobId, alreadyFinished: Boolean = false) {
+    private fun finishGeneration(setId: UUID, questionCount: Int, jobId: UUID = practice.get(setId).latestJob!!.jobId, alreadyFinished: Boolean = false) {
         val lease = UUID.randomUUID()
         jdbc.update("UPDATE ai_interview_app.background_jobs SET status = 'PROCESSING', lease_token = ?, lease_expires_at = now() + interval '5 minutes' WHERE id = ?", lease, jobId)
         val job = jobs.findById(jobId).orElseThrow()
@@ -262,13 +263,13 @@ class PracticeIntegrationTests {
     }
 
     private fun failGeneration(setId: UUID) {
-        val jobId = practice.get(setId).activeJob!!.jobId
+        val jobId = practice.get(setId).latestJob!!.jobId
         val lease = UUID.randomUUID()
         jdbc.update("UPDATE ai_interview_app.background_jobs SET status = 'PROCESSING', lease_token = ?, lease_expires_at = now() + interval '5 minutes' WHERE id = ?", lease, jobId)
         assertThat(jobs.markFailed(jobId, lease, "GEMINI_INVALID_RESPONSE", "Gemini response remained invalid")).isTrue()
     }
 
-    private fun request(resumeId: UUID, targetJobId: UUID) = CreatePracticeSetRequest(resumeId, targetJobId, "PRACTICE")
+    private fun request(resumeId: UUID, targetJobId: UUID) = CreatePracticeSetRequest(resumeId, targetJobId)
 
     private fun expectCode(code: String, call: ThrowingCallable) = assertThatThrownBy(call)
         .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo(code) }
@@ -334,15 +335,15 @@ class PracticeIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
             )
-            practice = PracticeService(jdbc, local, submissions, guard, jobs, mapper, transactions)
+            practice = PracticeService(jdbc, local, submissions, jobs, mapper, transactions)
             controller = PracticeController(practice, guard)
             val normalizer = ResumeTextNormalizer()
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
-            targetJobs = TargetJobService(jdbc, local, JobDescriptionPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
+            targetJobs = TargetJobService(jdbc, local, TargetJobPersistenceService(jdbc, normalizer, SectionAwareTextChunker(), ContentHasher()))
             materialization = JobEffectMaterializationService(jdbc, mapper)
         }
     }

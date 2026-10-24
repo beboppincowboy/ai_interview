@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.document.DocumentChunk
 import dev.jiaming.ai_interview.document.DocumentSourceType
 import dev.jiaming.ai_interview.document.ResolvedDocument
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.experience.ExperienceSplitItem
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import java.util.Optional
@@ -34,8 +34,8 @@ class AiResumeCoachServiceTests {
 		val input = input()
 		Mockito.`when`(contextService.jobFitContext(input)).thenReturn(CoachRagContext("context", false))
 		Mockito.`when`(client.generateJson(anyString())).thenReturn("not-json")
-		assertThatThrownBy { service.assessJobFit(input) }.isInstanceOfSatisfying(GeminiException::class.java) { exception ->
-			assertThat(exception.code()).isEqualTo(GeminiErrorCode.INVALID_RESPONSE)
+		assertThatThrownBy { service.assessJobFit(input) }.isInstanceOfSatisfying(AiProviderException::class.java) { exception ->
+			assertThat(exception.code()).isEqualTo(AiProviderErrorCode.INVALID_RESPONSE)
 			assertThat(exception.retryable()).isFalse()
 			assertThat(exception.message).doesNotContain("not-json")
 		}
@@ -45,8 +45,8 @@ class AiResumeCoachServiceTests {
 	@Test fun doesNotRepairMaxTokensFailure() {
 		val input = input()
 		Mockito.`when`(contextService.jobFitContext(input)).thenReturn(CoachRagContext("context", false))
-		Mockito.`when`(client.generateJson(anyString())).thenThrow(GeminiException(GeminiErrorCode.MAX_TOKENS, "token limit", false))
-		assertThatThrownBy { service.assessJobFit(input) }.isInstanceOfSatisfying(GeminiException::class.java) { exception -> assertThat(exception.code()).isEqualTo(GeminiErrorCode.MAX_TOKENS) }
+		Mockito.`when`(client.generateJson(anyString())).thenThrow(AiProviderException(AiProviderErrorCode.MAX_TOKENS, "token limit", false))
+		assertThatThrownBy { service.assessJobFit(input) }.isInstanceOfSatisfying(AiProviderException::class.java) { exception -> assertThat(exception.code()).isEqualTo(AiProviderErrorCode.MAX_TOKENS) }
 		Mockito.verify(client).generateJson(anyString())
 	}
 
@@ -74,12 +74,12 @@ class AiResumeCoachServiceTests {
 		Mockito.verifyNoInteractions(contextService)
 	}
 
-	@Test fun scoreResumeStopsAfterOneFailedRepairWithGeminiError() {
+	@Test fun scoreResumeStopsAfterOneFailedRepairWithAiProviderError() {
 		Mockito.`when`(client.generateJson(anyString())).thenReturn("not-json")
 
 		assertThatThrownBy { service.scoreResume("Built the payment API.", null) }
-			.isInstanceOfSatisfying(GeminiException::class.java) { exception ->
-				assertThat(exception.code()).isEqualTo(GeminiErrorCode.INVALID_RESPONSE)
+			.isInstanceOfSatisfying(AiProviderException::class.java) { exception ->
+				assertThat(exception.code()).isEqualTo(AiProviderErrorCode.INVALID_RESPONSE)
 				assertThat(exception.retryable()).isFalse()
 			}
 		Mockito.verify(client, Mockito.times(2)).generateJson(anyString())

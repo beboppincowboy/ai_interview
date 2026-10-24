@@ -19,7 +19,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/flow", component: lazyRouteComponent(() => import("@/pages/ResumePickerPage")) }),
   createRoute({ getParentRoute: () => rootRoute, path: "/flow/$resumeId", component: lazyRouteComponent(() => import("@/pages/ScorePage")) }),
   createRoute({ getParentRoute: () => rootRoute, path: "/flow/$resumeId/jobs", component: lazyRouteComponent(() => import("@/pages/TargetJobPickerPage")) }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/flow/$resumeId/jobs/$jobId", component: lazyRouteComponent(() => import("@/pages/FitPage")) }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/flow/$resumeId/jobs/$targetJobId", component: lazyRouteComponent(() => import("@/pages/FitPage")) }),
   createRoute({ getParentRoute: () => rootRoute, path: "/practice/$setId", component: lazyRouteComponent(() => import("@/pages/PracticePage")) }),
   createRoute({ getParentRoute: () => rootRoute, path: "/voice/$setId", component: lazyRouteComponent(() => import("@/pages/VoicePage")) }),
   createRoute({ getParentRoute: () => rootRoute, path: "/voice/sessions/$sessionId", component: lazyRouteComponent(() => import("@/pages/VoiceSessionPage")) }),

@@ -88,7 +88,7 @@ class ExperienceIntegrationTests {
 		assertThatThrownBy { service.rename(userId, first.id, ExperienceRenameRequest("Existing role")) }
 			.isInstanceOfSatisfying(ApiRequestException::class.java) {
 				assertThat(it.status()).isEqualTo(HttpStatus.CONFLICT)
-				assertThat(it.code()).isEqualTo("CONFLICT")
+				assertThat(it.code()).isEqualTo("EXPERIENCE_DUPLICATE")
 				assertThat(it.message).isEqualTo("An experience with this title and description already exists")
 				assertThat(it.message).doesNotContain("Existing role", first.id.toString())
 			}
@@ -107,7 +107,7 @@ class ExperienceIntegrationTests {
 		)))
 
 		assertThat(result.created).hasSize(2).allSatisfy { assertThat(it.source).isEqualTo(ExperienceSource.LINKEDIN) }
-		assertThat(result.skipped).containsExactly(ExperienceSkipped("existing   role", existing.id, existing.title))
+		assertThat(result.duplicates).containsExactly(ExperienceBatchDuplicate("existing   role", existing.id, existing.title))
 	}
 
 	@Test
@@ -145,14 +145,14 @@ class ExperienceIntegrationTests {
 		val first = dev.jiaming.ai_interview.jobs.JobAcceptedResponse(UUID.randomUUID(), JobType.EXPERIENCE_SPLIT,
 			dev.jiaming.ai_interview.jobs.JobStatus.QUEUED, dev.jiaming.ai_interview.jobs.JobStage.QUEUED, "/api/jobs/first", false)
 		val second = first.copy(jobId = UUID.randomUUID(), statusUrl = "/api/jobs/second")
-		whenever(jobSubmission.submit(eq(JobType.EXPERIENCE_SPLIT), isNull(), isNull(), any<Any>()))
+		whenever(jobSubmission.submit(eq(JobType.EXPERIENCE_SPLIT), isNull(), isNull(), any<Any>(), isNull(), isNull()))
 			.thenReturn(first, second)
 
 		val firstResult = service.split(ExperienceSplitRequest("First LinkedIn section with more than fifty characters for validation."))
 		val secondResult = service.split(ExperienceSplitRequest("Second LinkedIn section with different details, also more than fifty chars."))
 
 		assertThat(firstResult.jobId).isNotEqualTo(secondResult.jobId)
-		Mockito.verify(jobSubmission, Mockito.times(2)).submit(eq(JobType.EXPERIENCE_SPLIT), isNull(), isNull(), any<Any>())
+		Mockito.verify(jobSubmission, Mockito.times(2)).submit(eq(JobType.EXPERIENCE_SPLIT), isNull(), isNull(), any<Any>(), isNull(), isNull())
 	}
 
 	@Test

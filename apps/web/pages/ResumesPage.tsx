@@ -29,7 +29,7 @@ export default function ResumesPage() {
     return next;
   });
   const add = (
-    <AddResumeDialog onAdded={(resume) => resume.activeJob && addUploadJob(resume.activeJob.jobId)} />
+    <AddResumeDialog onAdded={(resume) => resume.latestJob && addUploadJob(resume.latestJob.jobId)} />
   );
 
   return (

@@ -49,7 +49,7 @@ class SuggestionsJobHandlerTests {
             SuggestionSourceInput.Resume(resume, document(DocumentSourceType.RESUME, resume.id)))
         Mockito.`when`(resolver.resolveStrict(userId, payload.resumeId, payload.targetJobId)).thenReturn(inputs)
         Mockito.`when`(suggestions.promptSources(userId, payload.resumeId)).thenReturn(sources)
-        Mockito.`when`(coach.suggestExperiences(inputs.resume(), inputs.jobDescription().orElseThrow(), sources)).thenReturn(result)
+        Mockito.`when`(coach.suggestExperiences(inputs.resume(), inputs.targetJob().orElseThrow(), sources)).thenReturn(result)
 
         val returned = handler.handle(payload, context(job))
 

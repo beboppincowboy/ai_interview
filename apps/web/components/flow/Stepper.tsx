@@ -4,9 +4,9 @@ import { cn } from "@/lib/utils";
 
 type Props = { current: 1 | 2 | 3 | 4 | 5 | 6; resumeId?: string; targetJobId?: string; practiceSetId?: string };
 
-/** The six-step journey. Steps whose prerequisite ID is missing are disabled. */
+/** Six-step navigation: resume enables Score/Target job, both pair IDs enable Fit/Mode, and a practice-set ID enables Practice. */
 export function Stepper({ current, resumeId, targetJobId, practiceSetId }: Props) {
-  const pair = resumeId && targetJobId ? linkOptions({ to: "/flow/$resumeId/jobs/$jobId", params: { resumeId, jobId: targetJobId } }) : null;
+  const pair = resumeId && targetJobId ? linkOptions({ to: "/flow/$resumeId/jobs/$targetJobId", params: { resumeId, targetJobId } }) : null;
   const steps = [
     { label: "Resume", link: linkOptions({ to: "/flow" }) },
     { label: "Score", link: resumeId ? linkOptions({ to: "/flow/$resumeId", params: { resumeId } }) : null },

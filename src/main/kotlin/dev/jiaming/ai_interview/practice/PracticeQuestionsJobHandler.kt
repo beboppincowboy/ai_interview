@@ -11,6 +11,7 @@ import dev.jiaming.ai_interview.jobs.JobType
 import java.util.Optional
 import org.springframework.stereotype.Component
 
+/** Generates and checkpoints question drafts from stored pair inputs, then materializes the saved questions. */
 @Component
 class PracticeQuestionsJobHandler(
     private val coachService: AiResumeCoachService,
@@ -24,10 +25,10 @@ class PracticeQuestionsJobHandler(
         context.stage(JobStage.GENERATING_QUESTIONS)
         val drafts = context.rootCheckpoint(PracticeQuestionDrafts::class.java, "drafts") ?: run {
             val documents = documentResolver.resolveStrict(context.userId(), payload.resumeId, payload.targetJobId)
-            val jobDescription = documents.jobDescription().orElseThrow {
-                IllegalStateException("Practice set ${payload.practiceSetId} has no target job description")
+            val targetJob = documents.targetJob().orElseThrow {
+                IllegalStateException("Practice set ${payload.practiceSetId} has no target job")
             }
-            coachService.generatePracticeQuestions(CoachAnalysisInput(documents.resume(), Optional.of(jobDescription)))
+            coachService.generatePracticeQuestions(CoachAnalysisInput(documents.resume(), Optional.of(targetJob)))
                 .also { context.saveRootCheckpoint(it, "practice-questions") }
         }
         context.materializePracticeQuestions(payload.practiceSetId, drafts.drafts)

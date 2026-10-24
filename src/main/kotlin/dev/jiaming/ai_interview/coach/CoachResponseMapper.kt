@@ -1,8 +1,8 @@
 package dev.jiaming.ai_interview.coach
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.experience.ExperienceSplitItem
 import dev.jiaming.ai_interview.experience.ExperienceSplitResult
 import dev.jiaming.ai_interview.score.ResumeScoreFix
@@ -23,13 +23,16 @@ import java.io.IOException
 import java.time.Instant
 import java.util.Locale
 
+/** Converts model DTOs into application results; parse and required-field failures use `INVALID_RESPONSE`. */
 @Component
 class CoachResponseMapper(private val objectMapper: ObjectMapper) {
+    /** Parses JSON into [responseType]; Jackson I/O or shape failures become a non-retryable `INVALID_RESPONSE`. */
     fun <T> parse(json: String, responseType: Class<T>): T = try { objectMapper.readValue(json, responseType) }
     catch (exception: IOException) {
-        throw GeminiException(GeminiErrorCode.INVALID_RESPONSE, "Gemini returned JSON that did not match the expected AI contract", exception, false)
+        throw AiProviderException(AiProviderErrorCode.INVALID_RESPONSE, "Model returned JSON that did not match the expected AI contract", exception, false)
     }
 
+    /** Requires bounded title/description and valid `YYYY-MM` dates; invalid required fields throw `INVALID_RESPONSE`. */
     fun normalizeExperienceSplit(response: ExperienceSplitResponse): ExperienceSplitResult {
         val items = response.items.orEmpty().filterNotNull().map { item ->
             val title = experienceText(item.title, "title", 1, 120)
@@ -49,7 +52,7 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
         return ExperienceSplitResult(items)
     }
 
-    /** Keeps only rewrites whose original line was copied from [resumeText], so each one points at a real line. */
+    /** Clamps scores, supplies a fallback fix/summary, and keeps only rewrites whose original line occurs in [resumeText]. */
     fun normalizeResumeScore(response: ResumeScoreDraftResponse, resumeText: String, jobTitle: String?): ResumeScoreResult {
         val scores = response.scores ?: AssessmentScores(0, 0, 0, 0, 0)
         val normalizedScores = AssessmentScores(
@@ -57,9 +60,9 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
             clampScore(scores.relevance), clampScore(scores.ats)
         )
         val fixes = response.fixes.orEmpty().filterNotNull().filter { !it.message.isNullOrBlank() }.take(6).mapIndexed { index, fix ->
-            ResumeScoreFix(index + 1, fallback(fix.section, "Resume"), normalizePriority(fix.priority).uppercase(Locale.ROOT), fix.message!!.trim())
+            ResumeScoreFix(index + 1, fallback(fix.section, "Resume"), normalizePriority(fix.priority), fix.message!!.trim())
         }.ifEmpty {
-            listOf(ResumeScoreFix(1, "Experience", "MEDIUM", "Add clear scope and measurable outcomes where you can support them."))
+            listOf(ResumeScoreFix(1, "Experience", Priority.MEDIUM, "Add clear scope and measurable outcomes where you can support them."))
         }
         val resumeLines = resumeText.lineSequence().map(::collapseWhitespace).toSet()
         // The prompt sent "<" before a tag name as "&lt;", so the model may copy a line back in that form.
@@ -81,12 +84,14 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
         )
     }
 
+    /** Clamps scores and fills missing summary, next step, and empty feedback lists with fixed fallback text. */
     fun normalizeFeedback(response: AnswerFeedbackResponse): AnswerFeedbackResult = AnswerFeedbackResult(
         clampScore(response.score), fallback(response.summary, "The answer was scored, but no summary was returned."),
         fallback(response.nextStep, "Add clearer structure, technical detail, and measurable outcomes."), nonEmpty(response.strengths),
         nonEmpty(response.gaps), nonEmpty(response.betterAnswerOutline), response.followUpQuestion?.trim()?.ifEmpty { null }
     )
 
+    /** Clamps the score, drops malformed requirements, and maps an unknown priority to `MEDIUM` without throwing. */
     fun normalizeJobFit(response: JobFitResponse): JobFitResult = JobFitResult(
         fitScore = clampScore(response.fitScore ?: 0),
         summary = fallback(response.summary, "The fit was assessed, but no summary was returned."),
@@ -98,7 +103,7 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
             .take(12).map { MissingRequirement(it.requirement!!.trim(), it.guidance!!.trim()) },
         feedback = response.feedback.orEmpty().filterNotNull()
             .filter { !it.message.isNullOrBlank() }.take(8)
-            .map { FitFeedback(normalizeFitPriority(it.priority), it.message!!.trim()) },
+            .map { FitFeedback(normalizePriority(it.priority), it.message!!.trim()) },
     )
 
     /**
@@ -113,15 +118,15 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
                 PracticeQuestionDraft(question.questionText.trim(), question.rationale.trim(), question.category?.trim()?.ifEmpty { null }, signals)
             }
             .take(MAX_PRACTICE_QUESTIONS)
-        if (drafts.size < MIN_PRACTICE_QUESTIONS) throw GeminiException(
-            GeminiErrorCode.INVALID_RESPONSE,
-            "Gemini returned ${drafts.size} practice questions with a rationale and expected signals; at least $MIN_PRACTICE_QUESTIONS are required",
+        if (drafts.size < MIN_PRACTICE_QUESTIONS) throw AiProviderException(
+            AiProviderErrorCode.INVALID_RESPONSE,
+            "Model returned ${drafts.size} practice questions with a rationale and expected signals; at least $MIN_PRACTICE_QUESTIONS are required",
             false
         )
         return PracticeQuestionDrafts(drafts)
     }
 
-    // Items must cite a source the model was given; the source's type and name come from our data, not the model.
+    /** Drops items with unknown source IDs or blank fields; the source type/name come from our data, and at most eight remain. */
     fun normalizeExperienceSuggestions(response: ExperienceSuggestionsResponse, sources: List<SuggestionSource>): ExperienceSuggestionsResult {
         val provided = sources.associateBy { it.id.toString() }
         return ExperienceSuggestionsResult(response.items.orEmpty().filterNotNull().mapNotNull { item ->
@@ -133,8 +138,8 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
 
     private fun cleanStrings(values: List<String?>?): List<String> = values.orEmpty().filterNotNull().map(String::trim).filter(String::isNotBlank).take(6)
     private fun nonEmpty(values: List<String>?): List<String> = cleanStrings(values).ifEmpty { listOf("No specific evidence returned") }
-    private fun normalizePriority(value: String?) = fallback(value, "medium").lowercase(Locale.ROOT).let { if (it in setOf("high", "medium", "low")) it else "medium" }
-    private fun normalizeFitPriority(value: String?) = fallback(value, "MEDIUM").uppercase(Locale.ROOT).let { if (it in setOf("HIGH", "MEDIUM", "LOW")) it else "MEDIUM" }
+    private fun normalizePriority(value: String?) =
+        Priority.entries.firstOrNull { it.name == value?.trim()?.uppercase(Locale.ROOT) } ?: Priority.MEDIUM
     private fun average(scores: AssessmentScores) = Math.round((scores.technicalDepth + scores.impact + scores.clarity + scores.relevance + scores.ats) / 5.0f)
     private fun clampScore(value: Int) = value.coerceIn(0, 100)
     private fun experienceText(value: String?, field: String, min: Int, max: Int): String = value?.let(::collapseWhitespace)
@@ -145,9 +150,9 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
         if (!Regex("\\d{4}-(0[1-9]|1[0-2])").matches(month)) invalidExperience(field)
         return month
     }
-    private fun invalidExperience(field: String): Nothing = throw GeminiException(
-        GeminiErrorCode.INVALID_RESPONSE,
-        "Gemini returned an experience with an invalid $field field",
+    private fun invalidExperience(field: String): Nothing = throw AiProviderException(
+        AiProviderErrorCode.INVALID_RESPONSE,
+        "Model returned an experience with an invalid $field field",
         false
     )
     private fun fallback(value: String?, default: String) = if (value.isNullOrBlank()) default else value.trim()

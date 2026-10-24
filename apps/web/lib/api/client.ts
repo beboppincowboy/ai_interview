@@ -1,9 +1,15 @@
 import { API_BASE_URL, REQUEST_TIMEOUT_MS } from "./config";
 import type { ApiErrorBody } from "./types";
 
+/** Failure category: HTTP response, network failure, request timeout, or invalid successful-response JSON. */
 export type ApiErrorKind = "HTTP" | "NETWORK" | "TIMEOUT" | "INVALID_RESPONSE";
 
+/** API request failure with nullable HTTP status/code and a retry flag for network, timeout, or HTTP 408/429/5xx. */
 export class ApiError extends Error {
+  /**
+   * `retryable`: the client may resend this request (NETWORK, TIMEOUT, HTTP 408/429/5xx).
+   * Unrelated to `JobError.retryable`, which says whether the server may rerun a background job.
+   */
   constructor(
     message: string,
     readonly kind: ApiErrorKind,
@@ -16,22 +22,26 @@ export class ApiError extends Error {
   }
 }
 
+/** Request method/body/signal/timeout/retry options; timeout and delay default from client config and retry count defaults to two. */
 export type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
   timeoutMs?: number;
-  /** Automatic retries for retryable failures. They reuse this call's idempotency key. */
+  /** Automatic retries for retryable failures, default 2. GET and POST only: PATCH and DELETE are never retried. */
   retries?: number;
   retryDelayMs?: number;
 };
 
 /**
- * One call is one user action: it gets one Idempotency-Key, reused by its automatic retries.
- * A user pressing Retry makes a new call and so sends a new key.
+ * Each POST call gets one Idempotency-Key, reused by its automatic retries; a user pressing Retry makes a new
+ * call and so sends a new key. GET is retried without a key. PATCH and DELETE carry no key and are sent once,
+ * so a transient failure reaches the caller instead of risking a rename or delete applied twice. Only retryable
+ * `ApiError`s are retried, and an aborted caller signal stops retries.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { retries = 2, retryDelayMs = 400 } = options;
+  const { retryDelayMs = 400 } = options;
+  const retries = options.method === "PATCH" || options.method === "DELETE" ? 0 : options.retries ?? 2;
   const idempotencyKey = options.method === "POST" ? crypto.randomUUID() : null;
   for (let attempt = 0; ; attempt++) {
     try {

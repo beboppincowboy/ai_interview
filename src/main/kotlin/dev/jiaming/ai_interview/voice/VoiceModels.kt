@@ -21,7 +21,7 @@ data class VoiceSessionView(
     val report: VoiceSessionReport? = null,
 )
 
-/** EXPIRED is an unsaved draft past its expiry; cleanup removes it. */
+/** Session lifecycle: EXPIRED applies to unsaved drafts past expiry; cleanup removes them. */
 enum class VoiceSessionStatus { DRAFT, EXPIRED, SAVED }
 
 /** A copy of one AI practice question taken when the run started; [id] is the practice question's ID. */
@@ -33,8 +33,8 @@ data class VoiceTranscript(val answers: List<VoiceAnswer>)
 /** What the interviewer said for [questionId] and the candidate's corrected answer; [incomplete] marks a cut-off capture. */
 data class VoiceAnswer(val questionId: UUID, val interviewerText: String, val answerText: String, val incomplete: Boolean)
 
-/** [replayed] is true when an identical Save was already committed and this call returned it. */
-data class VoiceSaveResult(val session: VoiceSessionView, val replayed: Boolean)
+/** [duplicate] is true when the same transcript was already saved: [session] is that save and no new report job started. */
+data class VoiceSaveResult(val session: VoiceSessionView, val duplicate: Boolean)
 
 /** Canonical question and run deadline reserved before contacting Gemini; each attempt consumes one DB slot. */
 data class VoiceTokenReservation(val question: VoiceQuestion, val runDeadline: Instant)
@@ -48,7 +48,7 @@ data class VoiceTokenResponse(
     val newSessionExpiresAt: Instant,
 )
 
-/** The report job's input. Its resource is the session; the transcript stays on the session row (R10). */
+/** Versioned report-job references; the job resource is the session and transcript remains on that session row. */
 @JvmRecord
 data class VoiceReportPayload(
     val payloadVersion: Int,

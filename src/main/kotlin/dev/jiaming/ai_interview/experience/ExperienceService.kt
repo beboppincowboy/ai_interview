@@ -23,12 +23,14 @@ class ExperienceService(
     private val contentHasher: ContentHasher,
     private val jobSubmissionService: JobSubmissionService
 ) {
+    /** Lists owner-scoped experiences newest first. */
     fun list(userId: UUID): ExperienceListResponse = ExperienceListResponse(jdbcTemplate.query(
         "SELECT * FROM ai_interview_app.experiences WHERE user_id = ? ORDER BY created_at DESC, id",
         experienceRowMapper,
         userId
     ))
 
+    /** Renaming re-keys duplicate detection; 409 EXPERIENCE_DUPLICATE if the new title + description matches another experience. */
     @Transactional
     fun rename(userId: UUID, experienceId: UUID, request: ExperienceRenameRequest): Experience {
         val title = RequestValidation.text("title", request.title, 1, 120)
@@ -54,7 +56,7 @@ class ExperienceService(
         }
     }
 
-    // Only suggestion sets that used the experience are affected; they are kept and read as stale.
+    /** Returns 404 for a missing item; affected suggestion sets are kept and become stale. */
     fun deleteImpact(userId: UUID, experienceId: UUID): DeleteImpact {
         jdbcTemplate.query(
             "SELECT id FROM ai_interview_app.experiences WHERE user_id = ? AND id = ?",
@@ -67,21 +69,24 @@ class ExperienceService(
         return DeleteImpact(0, 0, 0, 0, 0, stale)
     }
 
+    /** Deletes the owner-scoped item or returns 404 when no row matched. */
     fun delete(userId: UUID, experienceId: UUID) {
         val deleted = jdbcTemplate.update("DELETE FROM ai_interview_app.experiences WHERE user_id = ? AND id = ?", userId, experienceId)
         if (deleted != 1) throw experienceNotFound()
     }
 
+    /** Creates a validated FORM experience or returns its existing normalized title+description duplicate. */
     @Transactional
-    fun create(userId: UUID, input: ExperienceInput): ExperienceCreatedResponse {
+    fun create(userId: UUID, input: ExperienceInput): ExperienceCreated {
         val draft = validate(input)
         val hash = contentHash(draft.title, draft.description)
         val inserted = insert(userId, draft, ExperienceSource.FORM, hash)
-        if (inserted != null) return ExperienceCreatedResponse(inserted, false)
+        if (inserted != null) return ExperienceCreated(inserted, false)
         val existing = findByHash(userId, hash) ?: throw IllegalStateException("Experience duplicate could not be loaded after insert conflict")
-        return ExperienceCreatedResponse(existing, true)
+        return ExperienceCreated(existing, true)
     }
 
+    /** Saves 1–30 reviewed items as source LINKEDIN; items matching a saved experience go to `duplicates`, not stored. */
     @Transactional
     fun batch(userId: UUID, request: ExperienceBatchRequest): ExperienceBatchResult {
         val inputs = request.items
@@ -89,7 +94,7 @@ class ExperienceService(
             throw RequestValidation.invalid("items must contain 1 to 30 experiences")
         }
         val created = mutableListOf<Experience>()
-        val skipped = mutableListOf<ExperienceSkipped>()
+        val duplicates = mutableListOf<ExperienceBatchDuplicate>()
         for (input in inputs) {
             val draft = validate(input)
             val hash = contentHash(draft.title, draft.description)
@@ -99,12 +104,13 @@ class ExperienceService(
             } else {
                 val existing = findByHash(userId, hash)
                     ?: throw IllegalStateException("Experience duplicate could not be loaded after insert conflict")
-                skipped += ExperienceSkipped(draft.title, existing.id, existing.title)
+                duplicates += ExperienceBatchDuplicate(draft.title, existing.id, existing.title)
             }
         }
-        return ExperienceBatchResult(created, skipped)
+        return ExperienceBatchResult(created, duplicates)
     }
 
+    /** Validates 50–20,000 trimmed characters and submits a new split job; null resource disables job reuse. */
     fun split(request: ExperienceSplitRequest): JobAcceptedResponse {
         val text = RequestValidation.text("text", request.text, 50, 20_000)
         // A null resource deliberately bypasses active-job reuse; each explicit split is a new review job.
@@ -116,6 +122,7 @@ class ExperienceService(
         )
     }
 
+    /** Adds duplicate references by normalized title and description without saving the split result. */
     fun annotateDuplicates(userId: UUID, result: ExperienceSplitResult): ExperienceSplitResult {
         val hashes = result.items.map { contentHash(it.title, it.description) }.distinct()
         val existingByHash = findByHashes(userId, hashes)
@@ -182,7 +189,7 @@ class ExperienceService(
 
     private fun duplicateExperienceConflict() = ApiRequestException(
         HttpStatus.CONFLICT,
-        "CONFLICT",
+        "EXPERIENCE_DUPLICATE",
         "An experience with this title and description already exists"
     )
 

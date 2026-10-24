@@ -93,7 +93,7 @@ class VoiceControllerTests {
                 .content("""{"answers":[{"questionId":"${question.id}","interviewerText":"Tell me about it","answerText":"Reviewed answer","incomplete":true}]}"""),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.replayed").value(true))
+            .andExpect(jsonPath("$.duplicate").value(true))
             .andExpect(jsonPath("$.session.transcript.answers[0].answerText").value("Reviewed answer"))
 
         mockMvc.perform(

@@ -106,13 +106,13 @@ class ExperienceControllerTests {
 	fun patchDuplicateContentReturnsSanitizedConflict() {
 		val existing = experience()
 		Mockito.`when`(service.rename(eq(userId), eq(existing.id), any())).thenThrow(
-			ApiRequestException(HttpStatus.CONFLICT, "CONFLICT", "An experience with this title and description already exists")
+			ApiRequestException(HttpStatus.CONFLICT, "EXPERIENCE_DUPLICATE", "An experience with this title and description already exists")
 		)
 
 		mockMvc.perform(patch("/api/experiences/${existing.id}").contentType(MediaType.APPLICATION_JSON)
 			.content("""{"title":"Sensitive original title"}"""))
 			.andExpect(status().isConflict)
-			.andExpect(jsonPath("$.code").value("CONFLICT"))
+			.andExpect(jsonPath("$.code").value("EXPERIENCE_DUPLICATE"))
 			.andExpect(jsonPath("$.message").value("An experience with this title and description already exists"))
 	}
 
@@ -120,13 +120,13 @@ class ExperienceControllerTests {
 	fun returnsCreatedForNewFormItemAndOkForDuplicate() {
 		val experience = experience()
 		Mockito.`when`(localUser.localUserId()).thenReturn(userId)
-		Mockito.`when`(service.create(eq(userId), any())).thenReturn(ExperienceCreatedResponse(experience, false))
+		Mockito.`when`(service.create(eq(userId), any())).thenReturn(ExperienceCreated(experience, false))
 
 		mockMvc.perform(post("/api/experiences").contentType(MediaType.APPLICATION_JSON).content(inputJson()))
 			.andExpect(status().isCreated)
 			.andExpect(jsonPath("$.duplicate").value(false))
 
-		Mockito.`when`(service.create(eq(userId), any())).thenReturn(ExperienceCreatedResponse(experience, true))
+		Mockito.`when`(service.create(eq(userId), any())).thenReturn(ExperienceCreated(experience, true))
 		mockMvc.perform(post("/api/experiences").contentType(MediaType.APPLICATION_JSON).content(inputJson()))
 			.andExpect(status().isOk)
 			.andExpect(jsonPath("$.duplicate").value(true))
@@ -134,7 +134,7 @@ class ExperienceControllerTests {
 
 	@Test
 	fun formPostReplaysOriginalStatusAndBodyAndRejectsChangedBody() {
-		val created = ExperienceCreatedResponse(experience(), false)
+		val created = ExperienceCreated(experience(), false)
 		Mockito.`when`(service.create(eq(userId), any())).thenReturn(created)
 		val path = "/api/experiences"
 		val key = "experience-create-key"
@@ -155,7 +155,7 @@ class ExperienceControllerTests {
 
 	@Test
 	fun formPostKeepsDuplicateResponseAtOk() {
-		Mockito.`when`(service.create(eq(userId), any())).thenReturn(ExperienceCreatedResponse(experience(), true))
+		Mockito.`when`(service.create(eq(userId), any())).thenReturn(ExperienceCreated(experience(), true))
 
 		mockMvc.perform(post("/api/experiences").header("Idempotency-Key", "duplicate-key")
 			.contentType(MediaType.APPLICATION_JSON).content(inputJson()))

@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.score
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.jiaming.ai_interview.coach.Priority
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.json.JsonMapper
 import dev.jiaming.ai_interview.coach.AssessmentScores
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -62,7 +64,7 @@ class ResumeScoreServiceIntegrationTests {
 
         assertThat(response?.jobType).isEqualTo(JobType.RESUME_SCORE)
         val payload = argumentCaptor<ResumeScorePayload>()
-        Mockito.verify(jobSubmission).submit(eq(JobType.RESUME_SCORE), eq("resume"), eq(resumeId), payload.capture())
+        Mockito.verify(jobSubmission).submit(eq(JobType.RESUME_SCORE), eq("resume"), eq(resumeId), payload.capture(), anyOrNull(), anyOrNull())
         assertThat(payload.firstValue).isEqualTo(ResumeScorePayload(resumeId, "Built a payment API serving 20 services.", "Backend Engineer"))
     }
 
@@ -99,7 +101,7 @@ class ResumeScoreServiceIntegrationTests {
         assertThat(first.latestScore?.overall).isEqualTo(70)
         assertThat(first.latestScore?.stale).isFalse()
         assertThat(first.score?.overall).isEqualTo(70)
-        assertThat(first.activeJob?.jobType).isEqualTo(JobType.RESUME_SCORE)
+        assertThat(first.latestJob?.jobType).isEqualTo(JobType.RESUME_SCORE)
 
         library.patch(resumeId, mapOf("jobTitle" to null))
         assertThat(library.get(resumeId).latestScore?.stale).isTrue()
@@ -134,7 +136,7 @@ class ResumeScoreServiceIntegrationTests {
         val resumeId = insertResume("READY", null, "Built a payment API.")
         val insideSubmit = CountDownLatch(1)
         val releaseSubmit = CountDownLatch(1)
-        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any())).thenAnswer {
+        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any(), anyOrNull(), anyOrNull())).thenAnswer {
             insideSubmit.countDown()
             releaseSubmit.await(10, TimeUnit.SECONDS)
             null
@@ -194,7 +196,7 @@ class ResumeScoreServiceIntegrationTests {
 
     private fun score(overall: Int, jobTitle: String?, scoredAt: String) = ResumeScoreResult(
         overall, AssessmentScores(overall, overall, overall, overall, overall), "Summary",
-        listOf(ResumeScoreFix(1, "Experience", "HIGH", "Quantify it.")),
+        listOf(ResumeScoreFix(1, "Experience", Priority.HIGH, "Quantify it.")),
         listOf(ResumeScoreRewrite("Experience", "Did it.", "Cut cost by [X%].", listOf("[X%]"))),
         jobTitle, Instant.parse(scoredAt)
     )
@@ -213,7 +215,7 @@ class ResumeScoreServiceIntegrationTests {
     @BeforeEach fun reset() {
         jdbc.execute("TRUNCATE TABLE ai_interview_app.resume_scores, ai_interview_app.background_job_effects, ai_interview_app.background_jobs, ai_interview_app.resume_chunks, ai_interview_app.resumes, ai_interview_app.app_users CASCADE")
         Mockito.reset(jobSubmission)
-        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any())).thenAnswer { invocation ->
+        Mockito.`when`(jobSubmission.submit(eq(JobType.RESUME_SCORE), eq("resume"), any(), any(), anyOrNull(), anyOrNull())).thenAnswer { invocation ->
             val jobId = UUID.randomUUID()
             JobAcceptedResponse(jobId, JobType.RESUME_SCORE, JobStatus.QUEUED, JobStage.QUEUED, "/api/jobs/$jobId", false,
                 JobInputRefs(invocation.getArgument(2), null, null, null))
@@ -248,7 +250,7 @@ class ResumeScoreServiceIntegrationTests {
             ), mapper)
             library = ResumeLibraryService(
                 jdbc, local, persistence, normalizer, guard, transactions,
-                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper
+                ResumeStorageCleanupService(jdbc, Mockito.mock(ResumeStorageService::class.java)), DeleteImpactService(jdbc), mapper, BackgroundJobStore(jdbc, mapper)
             )
             jobs = BackgroundJobStore(jdbc, mapper)
             materialization = JobEffectMaterializationService(jdbc, mapper)
