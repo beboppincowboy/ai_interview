@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api/client";
-import { friendlyError } from "@/lib/errorMessages";
+import { errorCode, friendlyError } from "@/lib/errorMessages";
 
 describe("friendlyError", () => {
   it("maps job errors by code instead of provider wording", () => {
@@ -10,6 +10,12 @@ describe("friendlyError", () => {
 
   it("does not show backend wording for unknown codes", () => {
     expect(friendlyError(new ApiError("internal details", "HTTP", 502, "UNKNOWN_BACKEND_CODE"))).toBe("The request failed.");
+  });
+
+  it("extracts only known codes", () => {
+    expect(errorCode(new ApiError("x", "HTTP", 409, "EXPERIENCE_DUPLICATE"))).toBe("EXPERIENCE_DUPLICATE");
+    expect(errorCode({ code: "RETRIES_EXHAUSTED_STORAGE_UNAVAILABLE", message: "x", retryable: false })).toBeNull();
+    expect(errorCode({ code: "toString", message: "x", retryable: false })).toBeNull();
   });
 
   it("names no vendors in any message", () => {

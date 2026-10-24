@@ -482,7 +482,12 @@ export function createMockStore(options: MockStoreOptions = {}) {
   const listExperiences = () => tx((db) => ({ items: Object.values(db.experiences).sort(newestFirst) }));
   const renameExperience = (id: string, title: unknown): Experience => tx((db) => {
     const experience = requireExperience(db, id);
-    experience.title = requireText(title, "title", 1, 120);
+    const renamed = { ...experience, title: requireText(title, "title", 1, 120) };
+    const duplicate = findExperienceDuplicate(db, renamed);
+    if (duplicate && duplicate.id !== id) {
+      throw new MockHttpError(409, "EXPERIENCE_DUPLICATE", "An experience with this title and description already exists");
+    }
+    experience.title = renamed.title;
     return experience;
   });
 

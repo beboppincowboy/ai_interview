@@ -1,9 +1,9 @@
 import { ApiError } from "@/lib/api/client";
-import type { JobError } from "@/lib/api/types";
+import type { ErrorCode, JobError } from "@/lib/api/types";
 
 const NETWORK_MESSAGE = "The server is not reachable. Check your connection and try again.";
 
-const ERROR_MESSAGES: Record<string, string> = {
+const ERROR_MESSAGES: Record<ErrorCode, string> = {
   VOICE_DISABLED: "Spoken interviews are disabled. You can still open saved interviews.",
   VOICE_SESSION_NOT_FOUND: "This interview was deleted.",
   VOICE_SESSION_EXPIRED: "This unsaved interview expired.",
@@ -38,9 +38,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   SERVICE_UNAVAILABLE: "The backend service is temporarily unavailable.",
   NOT_FOUND: "The requested resource is no longer available.",
   CONFLICT: "The request conflicts with the current resource state.",
+  EXPERIENCE_DUPLICATE: "Another experience already has this title and description.",
   UNPROCESSABLE_CONTENT: "The submitted content could not be processed.",
   PROCESSING_ERROR: "The background job could not be processed.",
   INTERNAL_ERROR: "The backend could not complete the request.",
+  STORAGE_UNAVAILABLE: "File storage is temporarily unavailable. Try again shortly.",
+  RESUME_REFERENCE_REQUIRED: "Select a resume first.",
   REQUEST_FAILED: "The request failed.",
   TARGET_JOB_NOT_FOUND: "This target job was deleted.",
   EXPERIENCE_NOT_FOUND: "This experience was deleted.",
@@ -58,19 +61,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   UNSUPPORTED_FILE_TYPE: "Upload a PDF, DOC, DOCX, TXT or Markdown file."
 };
 
-export function errorCode(error: unknown): string | null {
-  if (error instanceof ApiError) {
-    return error.code;
-  }
-  if (isJobError(error)) {
-    return error.code;
-  }
-  return null;
+/** The error's code when it is a known {@link ErrorCode}; null for any other code or a codeless error. */
+export function errorCode(error: unknown): ErrorCode | null {
+  const code = error instanceof ApiError || isJobError(error) ? error.code : null;
+  return code && Object.hasOwn(ERROR_MESSAGES, code) ? code as ErrorCode : null;
 }
 
 export function friendlyError(error: unknown, fallback = "The request failed.") {
   const code = errorCode(error);
-  if (code && ERROR_MESSAGES[code]) {
+  if (code) {
     return ERROR_MESSAGES[code];
   }
   if (error instanceof ApiError) {
