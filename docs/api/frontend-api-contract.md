@@ -533,7 +533,7 @@ Body: `{}`. Starts `EXPERIENCE_SUGGESTIONS` and returns `202` with `JobAccepted`
 
 ### 7.1 `POST /api/practice-sets` — new
 
-Body: `{ "resumeId": "…", "targetJobId": "…", "mode": "PRACTICE" }`.
+Body: `{ "resumeId": "…", "targetJobId": "…", "mode": "PRACTICE" }`. `mode` is optional and defaults to `PRACTICE`.
 
 - Returns the pair's set right away (R14):
   - `201` when it is new, with `status: "GENERATING"`, empty `questions` and the `PRACTICE_QUESTIONS` job as
@@ -543,7 +543,7 @@ Body: `{ "resumeId": "…", "targetJobId": "…", "mode": "PRACTICE" }`.
   `resumeId` and `targetJobId` pair. No request field is ignored.
 - The AI chooses between 3 and 8 questions from the job description (R15).
 - Errors:
-  - `400 INVALID_REQUEST`: `mode` other than `PRACTICE`. Voice mode is out of scope.
+  - `400 INVALID_REQUEST`: `mode` other than `PRACTICE` (message `mode is invalid`). Voice mode is out of scope.
   - `404 RESUME_NOT_FOUND`, `404 TARGET_JOB_NOT_FOUND`.
   - `409 RESUME_NOT_READY`.
   - `429 RATE_LIMITED`: only when a new set starts a job.
@@ -767,7 +767,7 @@ provider; the UI never shows the code or the provider name. `ContractFreezeTests
 
 | Code | HTTP | Status | Trigger |
 |---|---|---|---|
-| `INVALID_REQUEST` | 400 | existing | Validation failed. The message names the field. |
+| `INVALID_REQUEST` | 400 | existing | Validation failed. The message names the field. A body that cannot be read (malformed JSON, or a value outside a closed set such as `mode`) gets this code too, with `<field> is invalid` when the field is known. |
 | `ANSWER_EMPTY` | 400 | new | The answer is blank after trimming, or every voice answer is blank. |
 | `ANSWER_TOO_LONG` | 400 | new | The answer is over 4,000 chars. |
 | `TRANSCRIPT_TOO_LARGE` | 400 | new | A saved voice transcript is over the byte limit. |

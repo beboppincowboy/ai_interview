@@ -43,7 +43,7 @@ class ResumeControllerTests {
 	@Test
 	fun uploadsResumeAndReturnsAcceptedJob() {
 		val jobId = UUID.randomUUID()
-		val item = ResumeLibraryItem(jobId.toString(), "resume", null, "UPLOAD", "resume.txt", "PROCESSING", null, null, Instant.now(), Instant.now())
+		val item = ResumeLibraryItem(jobId.toString(), "resume", null, ResumeSource.UPLOAD, "resume.txt", ResumeStatus.PROCESSING, null, null, Instant.now(), Instant.now())
 		Mockito.`when`(submissionService.submit(any(), anyOrNull(), anyOrNull()))
 			.thenReturn(ResponseEntity.status(HttpStatus.ACCEPTED).body(ResumeCreated(item, false)))
 		val file = MockMultipartFile("file", "resume.txt", "text/plain", "SKILLS\nJava Spring Boot".toByteArray(StandardCharsets.UTF_8))
@@ -57,7 +57,7 @@ class ResumeControllerTests {
 	@Test
 	fun returnsExistingResumeForImmediateByteDuplicate() {
 		val resumeId = UUID.randomUUID()
-		val item = ResumeLibraryItem(resumeId.toString(), "Backend", null, "UPLOAD", "backend.pdf", "READY", null, null, Instant.now(), Instant.now())
+		val item = ResumeLibraryItem(resumeId.toString(), "Backend", null, ResumeSource.UPLOAD, "backend.pdf", ResumeStatus.READY, null, null, Instant.now(), Instant.now())
 		Mockito.`when`(submissionService.submit(any(), anyOrNull(), anyOrNull()))
 			.thenReturn(ResponseEntity.ok(ResumeCreated(item, true)))
 		val file = MockMultipartFile("file", "copy.pdf", "application/pdf", byteArrayOf(1, 2, 3))
@@ -69,7 +69,7 @@ class ResumeControllerTests {
 
 	@Test
 	fun acceptsPasteAndReturnsCreatedResume() {
-		val item = ResumeLibraryItem(UUID.randomUUID().toString(), "Backend", null, "PASTE", null, "READY", null, null, Instant.now(), Instant.now())
+		val item = ResumeLibraryItem(UUID.randomUUID().toString(), "Backend", null, ResumeSource.PASTE, null, ResumeStatus.READY, null, null, Instant.now(), Instant.now())
 		Mockito.`when`(libraryService.paste(any())).thenReturn(ResponseEntity.status(HttpStatus.CREATED).body(ResumeCreated(item, false)))
 		mockMvc.perform(post("/api/resumes/paste").contentType(MediaType.APPLICATION_JSON)
 			.content("""{"name":"Backend","jobTitle":null,"text":"${"x".repeat(100)}"}"""))
@@ -80,7 +80,7 @@ class ResumeControllerTests {
 	@Test
 	fun patchReadsTheBodyWithTheJacksonConverterTheApplicationUses() {
 		val resumeId = UUID.randomUUID()
-		val item = ResumeLibraryItem(resumeId.toString(), "Backend", null, "PASTE", null, "READY", null, null, Instant.now(), Instant.now())
+		val item = ResumeLibraryItem(resumeId.toString(), "Backend", null, ResumeSource.PASTE, null, ResumeStatus.READY, null, null, Instant.now(), Instant.now())
 		Mockito.`when`(libraryService.patch(eq(resumeId), any<Map<String, Any?>>())).thenReturn(item)
 
 		mockMvc.perform(patch("/api/resumes/{id}", resumeId).contentType(MediaType.APPLICATION_JSON)

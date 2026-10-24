@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.server.ResponseStatusException
+import tools.jackson.core.JacksonException
 
 @RestControllerAdvice
 class ApiExceptionHandler {
@@ -42,8 +43,15 @@ class ApiExceptionHandler {
             ApiErrorResponse(ErrorCodes.forStatus(exception.statusCode), exception.reason ?: "Request failed")
         )
 
+    /** An unreadable body names the field when Jackson knows it, e.g. an unknown enum value: "mode is invalid". */
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    fun handleUnreadableBody(exception: HttpMessageNotReadableException): ApiErrorResponse {
+        val field = (exception.cause as? JacksonException)?.path?.mapNotNull { it.propertyName }?.joinToString(".")
+        return ApiErrorResponse("INVALID_REQUEST", if (field.isNullOrEmpty()) "The request payload is invalid" else "$field is invalid")
+    }
+
     @ExceptionHandler(
-        HttpMessageNotReadableException::class,
         MethodArgumentNotValidException::class,
         MethodArgumentTypeMismatchException::class
     )

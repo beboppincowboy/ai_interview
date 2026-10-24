@@ -2,6 +2,7 @@ package dev.jiaming.ai_interview.fit
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.jiaming.ai_interview.coach.Priority
 import dev.jiaming.ai_interview.coach.AiResumeCoachService
 import dev.jiaming.ai_interview.coach.CoachAnalysisInput
 import dev.jiaming.ai_interview.document.DocumentReferenceResolver
@@ -37,7 +38,7 @@ class JobFitJobHandlerTests {
     private val lease = UUID.randomUUID()
     private val payload = JobFitPayload(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
     private val result = JobFitResult(68, "Good match.", listOf(MatchedRequirement("Kotlin", "Built Kotlin services")),
-        listOf(MissingRequirement("Kafka", "Describe streaming work.")), listOf(FitFeedback("HIGH", "Lead with latency work.")))
+        listOf(MissingRequirement("Kafka", "Describe streaming work.")), listOf(FitFeedback(Priority.HIGH, "Lead with latency work.")))
 
     @Test
     fun matchesTheSavedPairThenCheckpointsBeforeMaterializing() {

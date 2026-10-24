@@ -42,8 +42,8 @@ class ResumeLibraryIntegrationTests {
         val first = requireNotNull(created.body)
         assertThat(created.statusCode.value()).isEqualTo(201)
         assertThat(first.duplicate).isFalse()
-        assertThat(first.resume.source).isEqualTo("PASTE")
-        assertThat(first.resume.status).isEqualTo("READY")
+        assertThat(first.resume.source).isEqualTo(ResumeSource.PASTE)
+        assertThat(first.resume.status).isEqualTo(ResumeStatus.READY)
         assertThat(library.get(UUID.fromString(first.resume.id)).text).isEqualTo(normalizer.normalize(raw))
 
         val duplicate = library.paste(PasteResumeRequest("Different label", null, normalizer.normalize(raw)))
@@ -140,7 +140,7 @@ class ResumeLibraryIntegrationTests {
         )
 
         val resume = library.list().items.single()
-        assertThat(resume.status).isEqualTo("PROCESSING")
+        assertThat(resume.status).isEqualTo(ResumeStatus.PROCESSING)
         assertThat(resume.latestJob?.jobId).isEqualTo(jobId)
         assertThat(resume.latestJob?.maxAttempts).isEqualTo(4)
     }

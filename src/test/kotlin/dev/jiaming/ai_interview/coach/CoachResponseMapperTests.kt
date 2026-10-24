@@ -57,7 +57,7 @@ class CoachResponseMapperTests {
         assertThat(normalized.scores.technicalDepth).isEqualTo(100)
         assertThat(normalized.scores.impact).isZero()
         assertThat(normalized.fixes.map { it.rank }).containsExactly(1, 2)
-        assertThat(normalized.fixes.map { it.priority }).containsExactly("HIGH", "MEDIUM")
+        assertThat(normalized.fixes.map { it.priority }).containsExactly(Priority.HIGH, Priority.MEDIUM)
         assertThat(normalized.rewrites.single().placeholders).containsExactly("[X%]", "[N]")
         assertThat(normalized.jobTitle).isEqualTo("Backend Engineer")
     }
@@ -91,7 +91,7 @@ class CoachResponseMapperTests {
 		assertThat(normalized.summary).isEqualTo("Strong match.")
 		assertThat(normalized.matchedRequirements).containsExactly(MatchedRequirement("Kotlin", "Built Kotlin services"))
 		assertThat(normalized.missingRequirements).containsExactly(MissingRequirement("Kafka", "Describe relevant work honestly."))
-		assertThat(normalized.feedback).containsExactly(FitFeedback("HIGH", "Move the project up."), FitFeedback("MEDIUM", "Keep it concise."))
+		assertThat(normalized.feedback).containsExactly(FitFeedback(Priority.HIGH, "Move the project up."), FitFeedback(Priority.MEDIUM, "Keep it concise."))
 	}
 
 	@Test

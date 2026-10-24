@@ -53,14 +53,19 @@ data class ResumeFileContent(
     val extension: String
 )
 
+enum class ResumeSource { UPLOAD, PASTE }
+
+/** Contract `Resume.status`; the stored `PENDING` is reported as PROCESSING. */
+enum class ResumeStatus { PROCESSING, READY, FAILED }
+
 @JvmRecord
 data class ResumeLibraryItem(
     val id: String,
     val name: String,
     val jobTitle: String?,
-    val source: String,
+    val source: ResumeSource,
     val originalFilename: String?,
-    val status: String,
+    val status: ResumeStatus,
     val latestScore: ResumeScoreSummary?,
     /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
     val latestJob: LatestJob?,
@@ -73,9 +78,9 @@ data class ResumeLibraryDetail(
     val id: String,
     val name: String,
     val jobTitle: String?,
-    val source: String,
+    val source: ResumeSource,
     val originalFilename: String?,
-    val status: String,
+    val status: ResumeStatus,
     val latestScore: ResumeScoreSummary?,
     /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
     val latestJob: LatestJob?,

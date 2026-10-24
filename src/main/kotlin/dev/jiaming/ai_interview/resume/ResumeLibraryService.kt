@@ -173,14 +173,14 @@ class ResumeLibraryService(
     private fun toItem(rs: ResultSet): ResumeLibraryItem {
         return ResumeLibraryItem(
             rs.getObject("id", UUID::class.java).toString(), rs.getString("name"), rs.getString("job_title"),
-            rs.getString("source"), rs.getString("original_filename"), apiStatus(rs.getString("processing_status")),
+            ResumeSource.valueOf(rs.getString("source")), rs.getString("original_filename"), apiStatus(rs.getString("processing_status")),
             latestScore(rs), null, rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant()
         )
     }
 
     private fun toDetail(rs: ResultSet): ResumeLibraryDetail {
         val item = toItem(rs)
-        val text = rs.getString("normalized_text")?.takeIf { item.status == "READY" }
+        val text = rs.getString("normalized_text")?.takeIf { item.status == ResumeStatus.READY }
         return ResumeLibraryDetail(
             item.id, item.name, item.jobTitle, item.source, item.originalFilename, item.status,
             item.latestScore, item.latestJob, item.createdAt, item.updatedAt, text,
@@ -197,7 +197,7 @@ class ResumeLibraryService(
     private fun latestJob(userId: UUID, resumeId: UUID): LatestJob? =
         backgroundJobStore.findLatestForResource(userId, RESOURCE, resumeId, LIBRARY_JOB_TYPES).map(LatestJob::from).orElse(null)
 
-    private fun apiStatus(status: String) = if (status == "PENDING") "PROCESSING" else status
+    private fun apiStatus(status: String) = if (status == "PENDING") ResumeStatus.PROCESSING else ResumeStatus.valueOf(status)
 
     private fun notFound(): Nothing = throw ApiRequestException(HttpStatus.NOT_FOUND, "RESUME_NOT_FOUND", "Resume was not found")
 

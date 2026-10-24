@@ -20,7 +20,6 @@ class PracticeController(
 ) {
     @PostMapping
     fun create(@RequestBody request: CreatePracticeSetRequest): ResponseEntity<PracticeSetCreated> {
-        if (request.mode != "PRACTICE") throw RequestValidation.invalid("mode must be PRACTICE")
         val resumeId = request.resumeId ?: throw RequestValidation.invalid("resumeId is required")
         val targetJobId = request.targetJobId ?: throw RequestValidation.invalid("targetJobId is required")
         return requestGuard.withIdempotentHttpCache("practice-set-create", listOf(resumeId, targetJobId), PracticeSetCreated::class.java) {

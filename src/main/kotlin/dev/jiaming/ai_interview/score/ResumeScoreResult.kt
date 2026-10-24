@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.score
 
 import dev.jiaming.ai_interview.coach.AssessmentScores
+import dev.jiaming.ai_interview.coach.Priority
 import java.time.Instant
 
 @JvmRecord
@@ -15,7 +16,7 @@ data class ResumeScoreResult(
 )
 
 @JvmRecord
-data class ResumeScoreFix(val rank: Int, val section: String, val priority: String, val message: String)
+data class ResumeScoreFix(val rank: Int, val section: String, val priority: Priority, val message: String)
 
 @JvmRecord
 data class ResumeScoreRewrite(

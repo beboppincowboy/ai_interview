@@ -1,16 +1,22 @@
 package dev.jiaming.ai_interview.contract
 
 import dev.jiaming.ai_interview.coach.AssessmentScores
+import dev.jiaming.ai_interview.coach.Priority
 import dev.jiaming.ai_interview.fit.FitView
 import dev.jiaming.ai_interview.gemini.GeminiErrorCode
+import dev.jiaming.ai_interview.history.VoiceSessionHistory
 import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobStatus
 import dev.jiaming.ai_interview.jobs.JobType
 import dev.jiaming.ai_interview.jobs.LatestJob
 import dev.jiaming.ai_interview.practice.AttemptView
+import dev.jiaming.ai_interview.practice.PracticeMode
 import dev.jiaming.ai_interview.practice.PracticeSetView
+import dev.jiaming.ai_interview.practice.QuestionOrigin
 import dev.jiaming.ai_interview.resume.ResumeLibraryDetail
 import dev.jiaming.ai_interview.resume.ResumeLibraryItem
+import dev.jiaming.ai_interview.resume.ResumeSource
+import dev.jiaming.ai_interview.resume.ResumeStatus
 import dev.jiaming.ai_interview.suggestions.SuggestionsView
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.assertj.core.api.Assertions.assertThat
@@ -22,6 +28,12 @@ class ContractFreezeTests {
 	@Test fun jobStatusValuesAreFrozen() { assertThat(JobStatus.entries.map { it.name }).containsExactly("QUEUED", "PROCESSING", "RETRYING", "SUCCEEDED", "FAILED") }
 	@Test fun jobTypeValuesAreFrozen() { assertThat(JobType.entries.map { it.name }).containsExactly("RESUME_EXTRACTION", "RESUME_SCORE", "ANSWER_FEEDBACK", "EXPERIENCE_SPLIT", "JOB_FIT", "EXPERIENCE_SUGGESTIONS", "PRACTICE_QUESTIONS", "VOICE_REPORT") }
 	@Test fun jobStageValuesAreFrozen() { assertThat(JobStage.entries.map { it.name }).containsExactly("QUEUED", "READING_FILE", "EXTRACTING_TEXT", "NORMALIZING_TEXT", "CHUNKING_TEXT", "SCORING_RESUME", "GENERATING_QUESTIONS", "SPLITTING_EXPERIENCE", "SCORING_ANSWER", "MATCHING_JOB", "COMPLETED", "RETRIEVING_EXPERIENCE", "MATCHING_EXPERIENCE") }
+	@Test fun practiceModeValuesAreFrozen() { assertThat(PracticeMode.entries.map { it.name }).containsExactly("PRACTICE") }
+	@Test fun questionOriginValuesAreFrozen() { assertThat(QuestionOrigin.entries.map { it.name }).containsExactly("AI", "USER") }
+	@Test fun priorityValuesAreFrozen() { assertThat(Priority.entries.map { it.name }).containsExactly("HIGH", "MEDIUM", "LOW") }
+	@Test fun resumeSourceValuesAreFrozen() { assertThat(ResumeSource.entries.map { it.name }).containsExactly("UPLOAD", "PASTE") }
+	@Test fun resumeStatusValuesAreFrozen() { assertThat(ResumeStatus.entries.map { it.name }).containsExactly("PROCESSING", "READY", "FAILED") }
+	@Test fun voiceReportStatusIsAJobStatus() { assertThat(VoiceSessionHistory::class.java.getDeclaredField("reportStatus").type).isEqualTo(JobStatus::class.java) }
 	@Test fun assessmentScoreKeysAreFrozen() {
 		val mapper = ObjectMapper()
 		val fields = mapper.readTree(mapper.writeValueAsString(AssessmentScores(1, 2, 3, 4, 5))).fieldNames().asSequence().toList()

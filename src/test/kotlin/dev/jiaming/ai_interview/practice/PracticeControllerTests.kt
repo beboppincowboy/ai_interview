@@ -59,6 +59,16 @@ class PracticeControllerTests {
     }
 
     @Test
+    fun anOmittedModeDefaultsToPractice() {
+        Mockito.`when`(service.create(resumeId, targetJobId))
+            .thenReturn(PracticeSetCreated(set(PracticeSetStatus.GENERATING, emptyList()), duplicate = false))
+
+        mockMvc.perform(post("/api/practice-sets").contentType(MediaType.APPLICATION_JSON).content("""{"resumeId":"$resumeId","targetJobId":"$targetJobId"}"""))
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.practiceSet.mode").value("PRACTICE"))
+    }
+
+    @Test
     fun voiceModeAndMissingIdsAreInvalidRequestsThatNeverReachTheService() {
         mockMvc.perform(create("VOICE"))
             .andExpect(status().isBadRequest)
@@ -138,13 +148,13 @@ class PracticeControllerTests {
         .contentType(MediaType.APPLICATION_JSON).content("""{"text":"$text"}""")
 
     private fun question(origin: String) = if (origin == "AI") {
-        PracticeQuestionView(UUID.randomUUID(), 1, "AI", "Why Kafka?", "Reason", "Technical depth", listOf("trade-offs"))
+        PracticeQuestionView(UUID.randomUUID(), 1, QuestionOrigin.AI, "Why Kafka?", "Reason", "Technical depth", listOf("trade-offs"))
     } else {
-        PracticeQuestionView(UUID.randomUUID(), 2, "USER", "Why did you choose Kafka?", null, null, emptyList())
+        PracticeQuestionView(UUID.randomUUID(), 2, QuestionOrigin.USER, "Why did you choose Kafka?", null, null, emptyList())
     }
 
     private fun set(status: PracticeSetStatus, questions: List<PracticeQuestionView>) = PracticeSetView(
-        UUID.randomUUID(), resumeId, targetJobId, "PRACTICE", status, questions,
+        UUID.randomUUID(), resumeId, targetJobId, PracticeMode.PRACTICE, status, questions,
         LatestJob(UUID.randomUUID(), JobType.PRACTICE_QUESTIONS, JobStatus.PROCESSING, JobStage.GENERATING_QUESTIONS, 1, 3, null),
         Instant.parse("2026-09-30T12:00:00Z"), Instant.parse("2026-09-30T12:00:00Z"),
     )

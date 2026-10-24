@@ -97,7 +97,7 @@ class PracticeService(
             if (current.status == PracticeSetStatus.GENERATING) {
                 throw ApiRequestException(HttpStatus.CONFLICT, "PRACTICE_SET_NOT_READY", "Practice questions are still being generated")
             }
-            val userQuestions = current.questions.count { it.origin == USER }
+            val userQuestions = current.questions.count { it.origin == QuestionOrigin.USER }
             if (userQuestions >= MAX_USER_QUESTIONS) {
                 throw ApiRequestException(HttpStatus.CONFLICT, "QUESTION_LIMIT_REACHED", "A practice set can have at most $MAX_USER_QUESTIONS of your own questions")
             }
@@ -126,7 +126,7 @@ class PracticeService(
             """.trimIndent(),
             RowMapper { rs, row ->
                 PracticeQuestionView(
-                    rs.getObject("id", UUID::class.java), row + 1, rs.getString("origin"), rs.getString("text"),
+                    rs.getObject("id", UUID::class.java), row + 1, QuestionOrigin.valueOf(rs.getString("origin")), rs.getString("text"),
                     rs.getString("rationale"), rs.getString("category"),
                     objectMapper.readValue(rs.getString("expected_signals"), Array<String>::class.java).toList(),
                 )
@@ -282,7 +282,7 @@ class PracticeService(
         val questions = questions(userId, set.id)
         val job = backgroundJobStore.findLatestForResource(userId, RESOURCE, set.id, listOf(JobType.PRACTICE_QUESTIONS)).orElse(null)
         val status = when {
-            questions.any { it.origin == AI } -> PracticeSetStatus.READY
+            questions.any { it.origin == QuestionOrigin.AI } -> PracticeSetStatus.READY
             job?.status == JobStatus.FAILED -> PracticeSetStatus.FAILED
             else -> PracticeSetStatus.GENERATING
         }
@@ -310,7 +310,7 @@ class PracticeService(
         RowMapper { rs, _ ->
             SetRow(
                 rs.getObject("id", UUID::class.java), rs.getObject("resume_id", UUID::class.java),
-                rs.getObject("target_job_id", UUID::class.java), rs.getString("mode"),
+                rs.getObject("target_job_id", UUID::class.java), PracticeMode.valueOf(rs.getString("mode")),
                 rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(),
             )
         },
@@ -328,13 +328,11 @@ class PracticeService(
     )
 
     private data class SetRow(
-        val id: UUID, val resumeId: UUID, val targetJobId: UUID, val mode: String, val createdAt: Instant, val updatedAt: Instant,
+        val id: UUID, val resumeId: UUID, val targetJobId: UUID, val mode: PracticeMode, val createdAt: Instant, val updatedAt: Instant,
     )
 
     companion object {
         const val RESOURCE = "practice-set"
-        const val AI = "AI"
-        const val USER = "USER"
         const val MAX_USER_QUESTIONS = 10
     }
 }

@@ -289,6 +289,16 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(again).toMatchObject({ duplicate: true, practiceSet: { id: created.id } });
   });
 
+  scenario("defaults an omitted practice-set mode to PRACTICE and rejects an unknown one", async () => {
+    const resume = await paste("Backend");
+    const job = await targetJob();
+    const rejected = await errorOf(post(`${base}/api/practice-sets`, { resumeId: resume.id, targetJobId: job.id, mode: "VOICE" }));
+    expect(rejected).toMatchObject({ status: 400, code: "INVALID_REQUEST" });
+    const created = await post<PracticeSetCreated>(`${base}/api/practice-sets`, { resumeId: resume.id, targetJobId: job.id });
+    expect(created).toMatchObject({ duplicate: false, practiceSet: { mode: "PRACTICE" } });
+    await settle([created.practiceSet.latestJob!.jobId]);
+  });
+
   scenario("scores attempts, reports the change, and rejects an unchanged answer", async () => {
     const resume = await paste("Backend");
     const job = await targetJob();

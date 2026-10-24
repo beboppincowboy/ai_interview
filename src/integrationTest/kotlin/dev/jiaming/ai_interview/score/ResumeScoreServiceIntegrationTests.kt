@@ -1,6 +1,7 @@
 package dev.jiaming.ai_interview.score
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.jiaming.ai_interview.coach.Priority
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.json.JsonMapper
 import dev.jiaming.ai_interview.coach.AssessmentScores
@@ -195,7 +196,7 @@ class ResumeScoreServiceIntegrationTests {
 
     private fun score(overall: Int, jobTitle: String?, scoredAt: String) = ResumeScoreResult(
         overall, AssessmentScores(overall, overall, overall, overall, overall), "Summary",
-        listOf(ResumeScoreFix(1, "Experience", "HIGH", "Quantify it.")),
+        listOf(ResumeScoreFix(1, "Experience", Priority.HIGH, "Quantify it.")),
         listOf(ResumeScoreRewrite("Experience", "Did it.", "Cut cost by [X%].", listOf("[X%]"))),
         jobTitle, Instant.parse(scoredAt)
     )

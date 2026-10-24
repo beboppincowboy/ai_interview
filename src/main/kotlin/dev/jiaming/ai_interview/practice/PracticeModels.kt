@@ -9,7 +9,7 @@ data class PracticeSetView(
     val id: UUID,
     val resumeId: UUID,
     val targetJobId: UUID,
-    val mode: String,
+    val mode: PracticeMode,
     val status: PracticeSetStatus,
     val questions: List<PracticeQuestionView>,
     /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
@@ -20,11 +20,15 @@ data class PracticeSetView(
 
 enum class PracticeSetStatus { GENERATING, READY, FAILED }
 
+enum class PracticeMode { PRACTICE }
+
+enum class QuestionOrigin { AI, USER }
+
 /** Contract §7 `Question`; `attempts` are oldest first. */
 data class PracticeQuestionView(
     val id: UUID,
     val order: Int,
-    val origin: String,
+    val origin: QuestionOrigin,
     val text: String,
     val rationale: String?,
     val category: String?,
@@ -75,7 +79,8 @@ data class PracticeQuestionsResult(val questions: List<PracticeQuestionView>)
 /** POST /api/practice-sets response. [duplicate] is true when the pair already had a set: [practiceSet] is that set and no job started. */
 data class PracticeSetCreated(val practiceSet: PracticeSetView, val duplicate: Boolean)
 
-data class CreatePracticeSetRequest(val resumeId: UUID?, val targetJobId: UUID?, val mode: String?)
+/** `mode` may be omitted and defaults to PRACTICE; any other value fails deserialization (400 INVALID_REQUEST). */
+data class CreatePracticeSetRequest(val resumeId: UUID?, val targetJobId: UUID?, val mode: PracticeMode = PracticeMode.PRACTICE)
 
 data class AddPracticeQuestionRequest(val text: String?)
 

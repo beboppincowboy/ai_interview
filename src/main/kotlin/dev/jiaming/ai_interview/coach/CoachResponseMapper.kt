@@ -57,9 +57,9 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
             clampScore(scores.relevance), clampScore(scores.ats)
         )
         val fixes = response.fixes.orEmpty().filterNotNull().filter { !it.message.isNullOrBlank() }.take(6).mapIndexed { index, fix ->
-            ResumeScoreFix(index + 1, fallback(fix.section, "Resume"), normalizePriority(fix.priority).uppercase(Locale.ROOT), fix.message!!.trim())
+            ResumeScoreFix(index + 1, fallback(fix.section, "Resume"), normalizePriority(fix.priority), fix.message!!.trim())
         }.ifEmpty {
-            listOf(ResumeScoreFix(1, "Experience", "MEDIUM", "Add clear scope and measurable outcomes where you can support them."))
+            listOf(ResumeScoreFix(1, "Experience", Priority.MEDIUM, "Add clear scope and measurable outcomes where you can support them."))
         }
         val resumeLines = resumeText.lineSequence().map(::collapseWhitespace).toSet()
         // The prompt sent "<" before a tag name as "&lt;", so the model may copy a line back in that form.
@@ -98,7 +98,7 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
             .take(12).map { MissingRequirement(it.requirement!!.trim(), it.guidance!!.trim()) },
         feedback = response.feedback.orEmpty().filterNotNull()
             .filter { !it.message.isNullOrBlank() }.take(8)
-            .map { FitFeedback(normalizeFitPriority(it.priority), it.message!!.trim()) },
+            .map { FitFeedback(normalizePriority(it.priority), it.message!!.trim()) },
     )
 
     /**
@@ -133,8 +133,8 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
 
     private fun cleanStrings(values: List<String?>?): List<String> = values.orEmpty().filterNotNull().map(String::trim).filter(String::isNotBlank).take(6)
     private fun nonEmpty(values: List<String>?): List<String> = cleanStrings(values).ifEmpty { listOf("No specific evidence returned") }
-    private fun normalizePriority(value: String?) = fallback(value, "medium").lowercase(Locale.ROOT).let { if (it in setOf("high", "medium", "low")) it else "medium" }
-    private fun normalizeFitPriority(value: String?) = fallback(value, "MEDIUM").uppercase(Locale.ROOT).let { if (it in setOf("HIGH", "MEDIUM", "LOW")) it else "MEDIUM" }
+    private fun normalizePriority(value: String?) =
+        Priority.entries.firstOrNull { it.name == value?.trim()?.uppercase(Locale.ROOT) } ?: Priority.MEDIUM
     private fun average(scores: AssessmentScores) = Math.round((scores.technicalDepth + scores.impact + scores.clarity + scores.relevance + scores.ats) / 5.0f)
     private fun clampScore(value: Int) = value.coerceIn(0, 100)
     private fun experienceText(value: String?, field: String, min: Int, max: Int): String = value?.let(::collapseWhitespace)
