@@ -3,9 +3,9 @@ package dev.jiaming.ai_interview.openai
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.coach.StructuredGenerationClient
 import dev.jiaming.ai_interview.gemini.GeminiClient
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
-import dev.jiaming.ai_interview.gemini.GeminiTransportResponse
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
+import dev.jiaming.ai_interview.ai.AiHttpTransportResponse
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
@@ -26,7 +26,7 @@ class OpenAiClientTests {
     @Test
     fun sendsTheBearerKeyModelAndJsonModeThenReturnsTheMessage() {
         val captured = AtomicReference<HttpRequest>()
-        val client = client { request -> captured.set(request); GeminiTransportResponse(200, choice("stop", """{"ok":true}""")) }
+        val client = client { request -> captured.set(request); AiHttpTransportResponse(200, choice("stop", """{"ok":true}""")) }
 
         assertThat(client.generateJson("Return JSON.")).isEqualTo("""{"ok":true}""")
 
@@ -42,27 +42,27 @@ class OpenAiClientTests {
 
     @Test
     fun aPerMinuteLimitRetriesButAnExhaustedBalanceDoesNot() {
-        assertFailure(429, """{"error":{"code":"rate_limit_exceeded"}}""", GeminiErrorCode.RATE_LIMITED, retryable = true)
-        assertFailure(429, """{"error":{"code":"insufficient_quota"}}""", GeminiErrorCode.RATE_LIMITED, retryable = false)
-        assertFailure(503, "{}", GeminiErrorCode.UPSTREAM_ERROR, retryable = true)
-        assertFailure(401, """{"error":{"code":"invalid_api_key"}}""", GeminiErrorCode.UPSTREAM_ERROR, retryable = false)
+        assertFailure(429, """{"error":{"code":"rate_limit_exceeded"}}""", AiProviderErrorCode.RATE_LIMITED, retryable = true)
+        assertFailure(429, """{"error":{"code":"insufficient_quota"}}""", AiProviderErrorCode.RATE_LIMITED, retryable = false)
+        assertFailure(503, "{}", AiProviderErrorCode.UPSTREAM_ERROR, retryable = true)
+        assertFailure(401, """{"error":{"code":"invalid_api_key"}}""", AiProviderErrorCode.UPSTREAM_ERROR, retryable = false)
     }
 
     @Test
     fun truncatedRefusedAndEmptyResponsesMapToTheSharedCodes() {
-        assertResponse(choice("length", "{"), GeminiErrorCode.MAX_TOKENS)
-        assertResponse(choice("content_filter", ""), GeminiErrorCode.SAFETY)
-        assertResponse("""{"choices":[{"finish_reason":"stop","message":{"content":null,"refusal":"I can't help with that."}}]}""", GeminiErrorCode.SAFETY)
-        assertResponse(choice("stop", "  "), GeminiErrorCode.EMPTY_RESPONSE)
-        assertResponse("""{"choices":[]}""", GeminiErrorCode.EMPTY_RESPONSE)
+        assertResponse(choice("length", "{"), AiProviderErrorCode.MAX_TOKENS)
+        assertResponse(choice("content_filter", ""), AiProviderErrorCode.SAFETY)
+        assertResponse("""{"choices":[{"finish_reason":"stop","message":{"content":null,"refusal":"I can't help with that."}}]}""", AiProviderErrorCode.SAFETY)
+        assertResponse(choice("stop", "  "), AiProviderErrorCode.EMPTY_RESPONSE)
+        assertResponse("""{"choices":[]}""", AiProviderErrorCode.EMPTY_RESPONSE)
     }
 
     @Test
     fun transportFailuresAndUnreadableBodiesAreRetryable() {
-        assertTransportFailure(GeminiErrorCode.TIMEOUT) { throw HttpTimeoutException("slow") }
-        assertTransportFailure(GeminiErrorCode.UPSTREAM_ERROR) { throw IOException("connection reset") }
-        assertTransportFailure(GeminiErrorCode.UPSTREAM_ERROR) { GeminiTransportResponse(200, "not json") }
-        assertTransportFailure(GeminiErrorCode.TIMEOUT) { throw InterruptedException() }
+        assertTransportFailure(AiProviderErrorCode.TIMEOUT) { throw HttpTimeoutException("slow") }
+        assertTransportFailure(AiProviderErrorCode.UPSTREAM_ERROR) { throw IOException("connection reset") }
+        assertTransportFailure(AiProviderErrorCode.UPSTREAM_ERROR) { AiHttpTransportResponse(200, "not json") }
+        assertTransportFailure(AiProviderErrorCode.TIMEOUT) { throw InterruptedException() }
         assertThat(Thread.interrupted()).isTrue()
     }
 
@@ -70,7 +70,7 @@ class OpenAiClientTests {
     fun aMissingKeyFailsWithoutCallingOpenAi() {
         val client = OpenAiClient(ObjectMapper(), { error("must not send") }, SimpleMeterRegistry(), ENDPOINT, "", 0.2, Duration.ofSeconds(5), 2048)
         assertThatThrownBy { client.generateJson("prompt") }
-            .isInstanceOfSatisfying(GeminiException::class.java) { assertThat(it.code()).isEqualTo(GeminiErrorCode.NOT_CONFIGURED) }
+            .isInstanceOfSatisfying(AiProviderException::class.java) { assertThat(it.code()).isEqualTo(AiProviderErrorCode.NOT_CONFIGURED) }
     }
 
     @Test
@@ -87,27 +87,27 @@ class OpenAiClientTests {
     }
 
     private fun assertFailure(status: Int, body: String, code: String, retryable: Boolean) {
-        assertThatThrownBy { client { GeminiTransportResponse(status, body) }.generateJson("prompt") }
-            .isInstanceOfSatisfying(GeminiException::class.java) {
+        assertThatThrownBy { client { AiHttpTransportResponse(status, body) }.generateJson("prompt") }
+            .isInstanceOfSatisfying(AiProviderException::class.java) {
                 assertThat(it.code()).isEqualTo(code)
                 assertThat(it.retryable()).isEqualTo(retryable)
             }
     }
 
-    private fun assertTransportFailure(code: String, transport: (HttpRequest) -> GeminiTransportResponse) {
+    private fun assertTransportFailure(code: String, transport: (HttpRequest) -> AiHttpTransportResponse) {
         assertThatThrownBy { client(transport).generateJson("prompt") }
-            .isInstanceOfSatisfying(GeminiException::class.java) {
+            .isInstanceOfSatisfying(AiProviderException::class.java) {
                 assertThat(it.code()).isEqualTo(code)
                 assertThat(it.retryable()).isTrue()
             }
     }
 
     private fun assertResponse(body: String, code: String) {
-        assertThatThrownBy { client { GeminiTransportResponse(200, body) }.generateJson("prompt") }
-            .isInstanceOfSatisfying(GeminiException::class.java) { assertThat(it.code()).isEqualTo(code) }
+        assertThatThrownBy { client { AiHttpTransportResponse(200, body) }.generateJson("prompt") }
+            .isInstanceOfSatisfying(AiProviderException::class.java) { assertThat(it.code()).isEqualTo(code) }
     }
 
-    private fun client(transport: (HttpRequest) -> GeminiTransportResponse) =
+    private fun client(transport: (HttpRequest) -> AiHttpTransportResponse) =
         OpenAiClient(ObjectMapper(), transport, SimpleMeterRegistry(), ENDPOINT, "sk-test", 0.2, Duration.ofSeconds(5), 2048)
 
     private fun choice(finishReason: String, content: String) = ObjectMapper().writeValueAsString(

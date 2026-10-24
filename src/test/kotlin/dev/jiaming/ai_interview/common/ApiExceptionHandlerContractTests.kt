@@ -1,7 +1,7 @@
 package dev.jiaming.ai_interview.common
 
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.resume.ResumeExtractionException
 import dev.jiaming.ai_interview.resume.ResumeParserBusyException
 import dev.jiaming.ai_interview.storage.S3ObjectStorageService
@@ -83,7 +83,7 @@ class ApiExceptionHandlerContractTests {
     fun geminiFailureBecomesBadGatewayWithProviderCode() {
         perform("gemini")
             .andExpect(status().isBadGateway)
-            .andExpect(jsonPath("$.code").value(GeminiErrorCode.SAFETY))
+            .andExpect(jsonPath("$.code").value(AiProviderErrorCode.SAFETY))
     }
 
     @Test
@@ -138,7 +138,7 @@ class ApiExceptionHandlerContractTests {
             "unavailable" -> throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "worker only")
             "bad-request" -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "bad")
             "unsupported-type" -> throw ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "PDF only")
-            "gemini" -> throw GeminiException(GeminiErrorCode.SAFETY, "blocked", false)
+            "gemini" -> throw AiProviderException(AiProviderErrorCode.SAFETY, "blocked", false)
             "extraction" -> throw ResumeExtractionException("Encrypted PDF")
             "too-large" -> throw MaxUploadSizeExceededException(10)
             "storage" -> { failingStorage().delete("resumes/key"); "unreachable" }

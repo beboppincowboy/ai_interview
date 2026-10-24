@@ -1,8 +1,8 @@
 package dev.jiaming.ai_interview.coach
 
 import dev.jiaming.ai_interview.experience.ExperienceSplitResult
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.practice.AnswerFeedbackResult
 import dev.jiaming.ai_interview.practice.PracticeQuestionDrafts
 import dev.jiaming.ai_interview.document.ResolvedDocument
@@ -70,18 +70,18 @@ class AiResumeCoachService(
     private fun <T, R> generateStructured(prompt: String, responseType: Class<T>, normalize: (T) -> R): R {
         val firstOutput = generationClient.generateJson(prompt)
         try { return normalize(responseMapper.parse(firstOutput, responseType)) }
-        catch (firstFailure: GeminiException) {
-            if (firstFailure.code != GeminiErrorCode.INVALID_RESPONSE) throw firstFailure
-            meterRegistry.counter("ai.gemini.schema_repair", "outcome", "attempted").increment()
+        catch (firstFailure: AiProviderException) {
+            if (firstFailure.code != AiProviderErrorCode.INVALID_RESPONSE) throw firstFailure
+            meterRegistry.counter("ai.chat.schema_repair", "outcome", "attempted").increment()
             val parseError = firstFailure.cause?.message ?: firstFailure.message
             val repairedOutput = generationClient.generateJson(promptBuilder.buildRepairPrompt(prompt, firstOutput, parseError))
             try {
                 val repaired = normalize(responseMapper.parse(repairedOutput, responseType))
-                meterRegistry.counter("ai.gemini.schema_repair", "outcome", "succeeded").increment()
+                meterRegistry.counter("ai.chat.schema_repair", "outcome", "succeeded").increment()
                 return repaired
-            } catch (secondFailure: GeminiException) {
-                meterRegistry.counter("ai.gemini.schema_repair", "outcome", "failed").increment()
-                throw GeminiException(GeminiErrorCode.INVALID_RESPONSE, "Gemini response remained invalid after one schema repair", secondFailure, false)
+            } catch (secondFailure: AiProviderException) {
+                meterRegistry.counter("ai.chat.schema_repair", "outcome", "failed").increment()
+                throw AiProviderException(AiProviderErrorCode.INVALID_RESPONSE, "Model response remained invalid after one schema repair", secondFailure, false)
             }
         }
     }

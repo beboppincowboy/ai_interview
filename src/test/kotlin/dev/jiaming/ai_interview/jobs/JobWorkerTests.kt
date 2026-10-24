@@ -2,7 +2,8 @@ package dev.jiaming.ai_interview.jobs
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.jiaming.ai_interview.common.RuntimeModeProperties
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.resume.ResumeExtractionException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -46,7 +47,7 @@ class JobWorkerTests {
 
     @Test fun transientFailureSchedulesFreshRetryAndDeletesCurrentMessage() {
         val id = UUID.randomUUID(); val message = message(); val processing = job(id, JobType.JOB_FIT, JobStatus.PROCESSING, 1)
-        Mockito.`when`(queueService.parse(message)).thenReturn(JobMessage(id)); Mockito.`when`(jobStore.claim(eq(id), any(), eq(properties.visibilityTimeout()))).thenReturn(Optional.of(processing)); Mockito.`when`(processor.process(eq(processing), any())).thenThrow(GeminiException("timeout")); Mockito.`when`(jobStore.markRetrying(eq(id), any(), eq("GEMINI_UPSTREAM_ERROR"), eq("timeout"), eq(java.time.Duration.ofSeconds(15)))).thenReturn(true)
+        Mockito.`when`(queueService.parse(message)).thenReturn(JobMessage(id)); Mockito.`when`(jobStore.claim(eq(id), any(), eq(properties.visibilityTimeout()))).thenReturn(Optional.of(processing)); Mockito.`when`(processor.process(eq(processing), any())).thenThrow(AiProviderException(AiProviderErrorCode.UPSTREAM_ERROR, "timeout", true)); Mockito.`when`(jobStore.markRetrying(eq(id), any(), eq("GEMINI_UPSTREAM_ERROR"), eq("timeout"), eq(java.time.Duration.ofSeconds(15)))).thenReturn(true)
         worker.processMessage(message)
         Mockito.verify(queueService).delete(message); Mockito.verify(queueService, Mockito.never()).changeVisibility(message, 15)
     }
@@ -60,7 +61,7 @@ class JobWorkerTests {
 
     @Test fun transientFailureStopsAfterThreeAttemptsAndMovesTransportMessageToDlq() {
         val id = UUID.randomUUID(); val message = message(); val processing = job(id, JobType.JOB_FIT, JobStatus.PROCESSING, 3)
-        Mockito.`when`(queueService.parse(message)).thenReturn(JobMessage(id)); Mockito.`when`(jobStore.claim(eq(id), any(), eq(properties.visibilityTimeout()))).thenReturn(Optional.of(processing)); Mockito.`when`(processor.process(eq(processing), any())).thenThrow(GeminiException("timeout")); Mockito.`when`(jobStore.findById(id)).thenReturn(Optional.of(processing)); Mockito.`when`(jobStore.markFailed(eq(id), any(), eq("RETRIES_EXHAUSTED_GEMINI_UPSTREAM_ERROR"), eq("timeout"))).thenReturn(true)
+        Mockito.`when`(queueService.parse(message)).thenReturn(JobMessage(id)); Mockito.`when`(jobStore.claim(eq(id), any(), eq(properties.visibilityTimeout()))).thenReturn(Optional.of(processing)); Mockito.`when`(processor.process(eq(processing), any())).thenThrow(AiProviderException(AiProviderErrorCode.UPSTREAM_ERROR, "timeout", true)); Mockito.`when`(jobStore.findById(id)).thenReturn(Optional.of(processing)); Mockito.`when`(jobStore.markFailed(eq(id), any(), eq("RETRIES_EXHAUSTED_GEMINI_UPSTREAM_ERROR"), eq("timeout"))).thenReturn(true)
         worker.processMessage(message)
         Mockito.verify(queueService).sendDeadLetter(id); Mockito.verify(queueService).delete(message); Mockito.verify(queueService, Mockito.never()).changeVisibility(message, 0); Mockito.verify(jobStore, Mockito.never()).markRetrying(any(), any(), any(), any(), any())
     }
@@ -73,7 +74,7 @@ class JobWorkerTests {
 
     @Test fun failedDeadLetterPublishLeavesTheMainMessageForAnotherAttempt() {
         val id = UUID.randomUUID(); val message = message(); val processing = job(id, JobType.JOB_FIT, JobStatus.PROCESSING, 3)
-        Mockito.`when`(queueService.parse(message)).thenReturn(JobMessage(id)); Mockito.`when`(jobStore.claim(eq(id), any(), eq(properties.visibilityTimeout()))).thenReturn(Optional.of(processing)); Mockito.`when`(processor.process(eq(processing), any())).thenThrow(GeminiException("timeout")); Mockito.`when`(jobStore.findById(id)).thenReturn(Optional.of(processing)); Mockito.`when`(jobStore.markFailed(eq(id), any(), eq("RETRIES_EXHAUSTED_GEMINI_UPSTREAM_ERROR"), eq("timeout"))).thenReturn(true); Mockito.`when`(queueService.receiveCount(message)).thenReturn(1); Mockito.doThrow(IllegalStateException("DLQ unavailable")).`when`(queueService).sendDeadLetter(id)
+        Mockito.`when`(queueService.parse(message)).thenReturn(JobMessage(id)); Mockito.`when`(jobStore.claim(eq(id), any(), eq(properties.visibilityTimeout()))).thenReturn(Optional.of(processing)); Mockito.`when`(processor.process(eq(processing), any())).thenThrow(AiProviderException(AiProviderErrorCode.UPSTREAM_ERROR, "timeout", true)); Mockito.`when`(jobStore.findById(id)).thenReturn(Optional.of(processing)); Mockito.`when`(jobStore.markFailed(eq(id), any(), eq("RETRIES_EXHAUSTED_GEMINI_UPSTREAM_ERROR"), eq("timeout"))).thenReturn(true); Mockito.`when`(queueService.receiveCount(message)).thenReturn(1); Mockito.doThrow(IllegalStateException("DLQ unavailable")).`when`(queueService).sendDeadLetter(id)
         worker.processMessage(message); Mockito.verify(queueService, Mockito.never()).delete(message); Mockito.verify(queueService).changeVisibility(message, 5)
     }
 

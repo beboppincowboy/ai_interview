@@ -1,6 +1,6 @@
 package dev.jiaming.ai_interview.common
 
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.resume.ResumeExtractionException
 import dev.jiaming.ai_interview.resume.ResumeParserBusyException
 import org.slf4j.LoggerFactory
@@ -28,9 +28,9 @@ class ApiExceptionHandler {
     fun handleResumeParserBusyException(exception: ResumeParserBusyException) =
         ApiErrorResponse("RESUME_PARSER_BUSY", exception.message)
 
-    @ExceptionHandler(GeminiException::class)
+    @ExceptionHandler(AiProviderException::class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
-    fun handleGeminiException(exception: GeminiException) =
+    fun handleAiProviderException(exception: AiProviderException) =
         ApiErrorResponse(exception.code(), exception.message)
 
     @ExceptionHandler(ApiRequestException::class)

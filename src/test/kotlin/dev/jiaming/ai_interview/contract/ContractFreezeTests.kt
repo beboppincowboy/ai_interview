@@ -3,7 +3,7 @@ package dev.jiaming.ai_interview.contract
 import dev.jiaming.ai_interview.coach.AssessmentScores
 import dev.jiaming.ai_interview.coach.Priority
 import dev.jiaming.ai_interview.fit.FitView
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
 import dev.jiaming.ai_interview.history.VoiceSessionHistory
 import dev.jiaming.ai_interview.jobs.JobStage
 import dev.jiaming.ai_interview.jobs.JobStatus
@@ -51,16 +51,16 @@ class ContractFreezeTests {
 		val fields = mapper.readTree(mapper.writeValueAsString(job)).fieldNames().asSequence().toList()
 		assertThat(fields).containsExactly("jobId", "jobType", "status", "stage", "attempts", "maxAttempts", "error")
 	}
-	@Test fun geminiErrorCodesTheClientMapsAreFrozen() {
-		assertThat(GeminiErrorCode.NOT_CONFIGURED).isEqualTo("GEMINI_NOT_CONFIGURED")
-		assertThat(GeminiErrorCode.RATE_LIMITED).isEqualTo("GEMINI_RATE_LIMITED")
-		assertThat(GeminiErrorCode.TIMEOUT).isEqualTo("GEMINI_TIMEOUT")
-		assertThat(GeminiErrorCode.UPSTREAM_ERROR).isEqualTo("GEMINI_UPSTREAM_ERROR")
-		assertThat(GeminiErrorCode.SAFETY).isEqualTo("GEMINI_SAFETY")
-		assertThat(GeminiErrorCode.RECITATION).isEqualTo("GEMINI_RECITATION")
-		assertThat(GeminiErrorCode.MAX_TOKENS).isEqualTo("GEMINI_MAX_TOKENS")
-		assertThat(GeminiErrorCode.EMPTY_RESPONSE).isEqualTo("GEMINI_EMPTY_RESPONSE")
-		assertThat(GeminiErrorCode.INVALID_RESPONSE).isEqualTo("GEMINI_INVALID_RESPONSE")
+	@Test fun aiProviderErrorCodesTheClientMapsAreFrozen() {
+		assertThat(AiProviderErrorCode.NOT_CONFIGURED).isEqualTo("GEMINI_NOT_CONFIGURED")
+		assertThat(AiProviderErrorCode.RATE_LIMITED).isEqualTo("GEMINI_RATE_LIMITED")
+		assertThat(AiProviderErrorCode.TIMEOUT).isEqualTo("GEMINI_TIMEOUT")
+		assertThat(AiProviderErrorCode.UPSTREAM_ERROR).isEqualTo("GEMINI_UPSTREAM_ERROR")
+		assertThat(AiProviderErrorCode.SAFETY).isEqualTo("GEMINI_SAFETY")
+		assertThat(AiProviderErrorCode.RECITATION).isEqualTo("GEMINI_RECITATION")
+		assertThat(AiProviderErrorCode.MAX_TOKENS).isEqualTo("GEMINI_MAX_TOKENS")
+		assertThat(AiProviderErrorCode.EMPTY_RESPONSE).isEqualTo("GEMINI_EMPTY_RESPONSE")
+		assertThat(AiProviderErrorCode.INVALID_RESPONSE).isEqualTo("GEMINI_INVALID_RESPONSE")
 	}
 	@Test fun documentedErrorCodesAreFrozen() {
 		val section = File("docs/api/frontend-api-contract.md").readText().substringAfter("## 10. Error codes").substringBefore("\n## ")

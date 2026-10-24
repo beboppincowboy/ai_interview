@@ -2,8 +2,8 @@ package dev.jiaming.ai_interview.jobs
 
 import dev.jiaming.ai_interview.common.ApiExceptionHandlerContractTests
 import dev.jiaming.ai_interview.common.ApiRequestException
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.resume.ResumeExtractionException
 import dev.jiaming.ai_interview.resume.ResumeParserBusyException
 import org.assertj.core.api.Assertions.assertThat
@@ -15,9 +15,9 @@ class JobFailureClassifierTests {
 	private val classifier = JobFailureClassifier()
 
 	@Test
-	fun retriesGeminiRateLimitsAndServerErrors() {
-		val rateLimit = classifier.classify(GeminiException("quota", 429, true))
-		assertThat(rateLimit.code).isEqualTo(GeminiErrorCode.RATE_LIMITED)
+	fun retriesAiProviderRateLimitsAndServerErrors() {
+		val rateLimit = classifier.classify(AiProviderException(AiProviderErrorCode.RATE_LIMITED, "quota", 429, true))
+		assertThat(rateLimit.code).isEqualTo(AiProviderErrorCode.RATE_LIMITED)
 		assertThat(rateLimit.retryable).isTrue()
 		assertThat(classifier.classify(ResponseStatusException(HttpStatus.BAD_GATEWAY)).retryable).isTrue()
 	}
@@ -37,12 +37,12 @@ class JobFailureClassifierTests {
 	}
 
 	@Test
-	fun preservesGeminiRetryMetadataForEmptyAndTerminalFinishReasons() {
-		val empty = classifier.classify(GeminiException(GeminiErrorCode.EMPTY_RESPONSE, "empty", true))
-		val maxTokens = classifier.classify(GeminiException(GeminiErrorCode.MAX_TOKENS, "truncated", false))
-		assertThat(empty.code).isEqualTo(GeminiErrorCode.EMPTY_RESPONSE)
+	fun preservesAiProviderRetryMetadataForEmptyAndTerminalFinishReasons() {
+		val empty = classifier.classify(AiProviderException(AiProviderErrorCode.EMPTY_RESPONSE, "empty", true))
+		val maxTokens = classifier.classify(AiProviderException(AiProviderErrorCode.MAX_TOKENS, "truncated", false))
+		assertThat(empty.code).isEqualTo(AiProviderErrorCode.EMPTY_RESPONSE)
 		assertThat(empty.retryable).isTrue()
-		assertThat(maxTokens.code).isEqualTo(GeminiErrorCode.MAX_TOKENS)
+		assertThat(maxTokens.code).isEqualTo(AiProviderErrorCode.MAX_TOKENS)
 		assertThat(maxTokens.retryable).isFalse()
 	}
 

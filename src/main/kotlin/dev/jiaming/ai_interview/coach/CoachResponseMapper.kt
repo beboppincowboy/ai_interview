@@ -1,8 +1,8 @@
 package dev.jiaming.ai_interview.coach
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import dev.jiaming.ai_interview.gemini.GeminiErrorCode
-import dev.jiaming.ai_interview.gemini.GeminiException
+import dev.jiaming.ai_interview.ai.AiProviderErrorCode
+import dev.jiaming.ai_interview.ai.AiProviderException
 import dev.jiaming.ai_interview.experience.ExperienceSplitItem
 import dev.jiaming.ai_interview.experience.ExperienceSplitResult
 import dev.jiaming.ai_interview.score.ResumeScoreFix
@@ -27,7 +27,7 @@ import java.util.Locale
 class CoachResponseMapper(private val objectMapper: ObjectMapper) {
     fun <T> parse(json: String, responseType: Class<T>): T = try { objectMapper.readValue(json, responseType) }
     catch (exception: IOException) {
-        throw GeminiException(GeminiErrorCode.INVALID_RESPONSE, "Gemini returned JSON that did not match the expected AI contract", exception, false)
+        throw AiProviderException(AiProviderErrorCode.INVALID_RESPONSE, "Model returned JSON that did not match the expected AI contract", exception, false)
     }
 
     fun normalizeExperienceSplit(response: ExperienceSplitResponse): ExperienceSplitResult {
@@ -113,9 +113,9 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
                 PracticeQuestionDraft(question.questionText.trim(), question.rationale.trim(), question.category?.trim()?.ifEmpty { null }, signals)
             }
             .take(MAX_PRACTICE_QUESTIONS)
-        if (drafts.size < MIN_PRACTICE_QUESTIONS) throw GeminiException(
-            GeminiErrorCode.INVALID_RESPONSE,
-            "Gemini returned ${drafts.size} practice questions with a rationale and expected signals; at least $MIN_PRACTICE_QUESTIONS are required",
+        if (drafts.size < MIN_PRACTICE_QUESTIONS) throw AiProviderException(
+            AiProviderErrorCode.INVALID_RESPONSE,
+            "Model returned ${drafts.size} practice questions with a rationale and expected signals; at least $MIN_PRACTICE_QUESTIONS are required",
             false
         )
         return PracticeQuestionDrafts(drafts)
@@ -145,9 +145,9 @@ class CoachResponseMapper(private val objectMapper: ObjectMapper) {
         if (!Regex("\\d{4}-(0[1-9]|1[0-2])").matches(month)) invalidExperience(field)
         return month
     }
-    private fun invalidExperience(field: String): Nothing = throw GeminiException(
-        GeminiErrorCode.INVALID_RESPONSE,
-        "Gemini returned an experience with an invalid $field field",
+    private fun invalidExperience(field: String): Nothing = throw AiProviderException(
+        AiProviderErrorCode.INVALID_RESPONSE,
+        "Model returned an experience with an invalid $field field",
         false
     )
     private fun fallback(value: String?, default: String) = if (value.isNullOrBlank()) default else value.trim()
