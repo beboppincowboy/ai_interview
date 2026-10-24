@@ -1,5 +1,6 @@
 package dev.jiaming.ai_interview.jobs
 
+import dev.jiaming.ai_interview.common.ApiExceptionHandlerContractTests
 import dev.jiaming.ai_interview.common.ApiRequestException
 import dev.jiaming.ai_interview.gemini.GeminiErrorCode
 import dev.jiaming.ai_interview.gemini.GeminiException
@@ -19,6 +20,20 @@ class JobFailureClassifierTests {
 		assertThat(rateLimit.code).isEqualTo(GeminiErrorCode.RATE_LIMITED)
 		assertThat(rateLimit.retryable).isTrue()
 		assertThat(classifier.classify(ResponseStatusException(HttpStatus.BAD_GATEWAY)).retryable).isTrue()
+	}
+
+	@Test
+	fun storageFailureHasTheApiCodeAndIsRetried() {
+		val thrown = runCatching { ApiExceptionHandlerContractTests.failingStorage().delete("resumes/key") }.exceptionOrNull()!!
+		val failure = classifier.classify(RuntimeException("job failed", thrown))
+		assertThat(failure.code).isEqualTo("STORAGE_UNAVAILABLE")
+		assertThat(failure.retryable).isTrue()
+	}
+
+	@Test
+	fun libraryStatusFailuresUseTheApiCodes() {
+		assertThat(classifier.classify(ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS)).code).isEqualTo("RATE_LIMITED")
+		assertThat(classifier.classify(ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE)).code).isEqualTo("SERVICE_UNAVAILABLE")
 	}
 
 	@Test

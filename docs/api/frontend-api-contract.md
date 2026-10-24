@@ -383,7 +383,7 @@ Returns `200` with `{ "items": Experience[] }`.
 
 Body: `{ "title": string }`. Returns `200` with the updated `Experience`. Renaming recomputes the duplicate
 hash from the normalized title and unchanged description. Errors: `400 INVALID_REQUEST` for an invalid title,
-`404 EXPERIENCE_NOT_FOUND` for a missing or other user's experience, and `409 CONFLICT` if another owned
+`404 EXPERIENCE_NOT_FOUND` for a missing or other user's experience, and `409 EXPERIENCE_DUPLICATE` if another owned
 experience already has the same normalized title and description.
 
 ### 5.6 `GET /api/experiences/{experienceId}/delete-impact` — new
@@ -760,39 +760,66 @@ them out of 5.3.
 
 ## 10. Error codes
 
-Existing codes stay unchanged. The UI maps every code below. AI-provider codes (`GEMINI_*`) remain as they are;
-the UI never shows the code or the provider name.
+This table lists every code a client can receive, in an API error body or in `JobError.code`. A given failure has
+one code in both places: library and storage failures map to codes in one place, shared by the API exception
+handler and the job failure classifier. AI-provider codes keep their historical `GEMINI_*` prefix whatever the
+provider; the UI never shows the code or the provider name. `ContractFreezeTests` pins this list.
 
-| Code | HTTP | Status | Meaning |
+| Code | HTTP | Status | Trigger |
 |---|---|---|---|
 | `INVALID_REQUEST` | 400 | existing | Validation failed. The message names the field. |
-| `ANSWER_EMPTY` | 400 | new | The answer is blank after trimming. |
+| `ANSWER_EMPTY` | 400 | new | The answer is blank after trimming, or every voice answer is blank. |
 | `ANSWER_TOO_LONG` | 400 | new | The answer is over 4,000 chars. |
+| `TRANSCRIPT_TOO_LARGE` | 400 | new | A saved voice transcript is over the byte limit. |
+| `RESUME_REFERENCE_REQUIRED` | 400 | new | Job only: the background job carries no resume reference. |
 | `NOT_FOUND` | 404 | existing | Generic missing resource. |
-| `RESUME_NOT_FOUND` | 404 | existing code, new use | |
-| `TARGET_JOB_NOT_FOUND` | 404 | new | Replaces `JOB_DESCRIPTION_NOT_FOUND`. |
+| `RESUME_NOT_FOUND` | 404 | existing code, new use | Missing or other user's resume, in a request or when a job resolves its references. |
+| `TARGET_JOB_NOT_FOUND` | 404 | new | Missing target job, in a request or when a job resolves its references. Replaces `JOB_DESCRIPTION_NOT_FOUND`. |
 | `EXPERIENCE_NOT_FOUND` | 404 | new | |
 | `PRACTICE_SET_NOT_FOUND` | 404 | new | |
 | `QUESTION_NOT_FOUND` | 404 | new | |
 | `ATTEMPT_NOT_FOUND` | 404 | new | |
 | `JOB_NOT_FOUND` | 404 | existing | |
-| `CONFLICT` | 409 | existing | An idempotency key was reused with a different body, or an experience rename would duplicate another owned item. |
-| `RESUME_NOT_READY` | 409 | existing code, new use | |
+| `VOICE_SESSION_NOT_FOUND` | 404 | new | Missing or other user's voice session. |
+| `VOICE_QUESTION_NOT_FOUND` | 404 | new | The question is not part of the voice session. |
+| `CONFLICT` | 409 | existing | An `Idempotency-Key` was reused with a different body. |
+| `EXPERIENCE_DUPLICATE` | 409 | new | An experience rename would match another owned experience's title and description. |
+| `RESUME_NOT_READY` | 409 | existing code, new use | The resume has not finished processing, in a request or when a job resolves its references. |
 | `NO_EXPERIENCE_SOURCES` | 409 | new | |
 | `PRACTICE_SET_NOT_READY` | 409 | new | |
 | `PRACTICE_SET_NOT_FAILED` | 409 | new | |
 | `QUESTION_LIMIT_REACHED` | 409 | new | |
 | `ANSWER_UNCHANGED` | 409 | new | |
 | `ATTEMPT_NOT_FAILED` | 409 | new | |
+| `VOICE_SESSION_EXPIRED` | 409 | new | The unsaved voice draft expired. |
+| `VOICE_SESSION_NOT_DRAFT` | 409 | new | A connection was requested for a saved voice session. |
+| `VOICE_SESSION_ALREADY_SAVED` | 409 | new | The session was already saved with a different transcript. |
+| `VOICE_RUN_EXPIRED` | 409 | new | The voice run's recording time has ended. |
+| `VOICE_TOKEN_BUDGET_EXHAUSTED` | 409 | new | The voice session reached its connection limit. |
+| `VOICE_REPORT_NOT_RETRYABLE` | 409 | new | Only a failed current voice report can be retried. |
 | `UPLOAD_TOO_LARGE` | 413 | existing | |
 | `UNSUPPORTED_FILE_TYPE` | 415 | new | |
-| `UNPROCESSABLE_CONTENT`, `RESUME_EXTRACTION_FAILED` | 422 | existing | |
-| `RATE_LIMITED` | 429 | existing | |
-| `SERVICE_UNAVAILABLE`, `RESUME_PARSER_BUSY` | 503 | existing | |
-| `INTERNAL_ERROR`, `REQUEST_FAILED` | 500 | existing | |
+| `UNPROCESSABLE_CONTENT` | 422 | existing | |
+| `RESUME_EXTRACTION_FAILED` | 422 | existing | The resume text could not be extracted. |
+| `RATE_LIMITED` | 429 | existing | Too many requests in the rate-limit window. |
+| `VOICE_TOKEN_RATE_LIMITED` | 429 | new | The voice provider is at its usage limit. |
+| `INTERNAL_ERROR` | 500 | existing | Unexpected server error. |
+| `REQUEST_FAILED` | 500 | existing | A library failure with no more specific code. |
+| `STORAGE_UNAVAILABLE` | 502 | new | Object storage (S3) failed; retryable on a job. |
+| `VOICE_TOKEN_UNAVAILABLE` | 502 | new | The voice provider could not be reached. |
+| `GEMINI_NOT_CONFIGURED`, `GEMINI_RATE_LIMITED`, `GEMINI_TIMEOUT`, `GEMINI_UPSTREAM_ERROR`, `GEMINI_SAFETY`, `GEMINI_RECITATION`, `GEMINI_MAX_TOKENS`, `GEMINI_EMPTY_RESPONSE`, `GEMINI_INVALID_RESPONSE` | 502 | existing | The AI provider failed; the prefix is historical. |
+| `SERVICE_UNAVAILABLE` | 503 | existing | A dependency or feature is temporarily unavailable. |
+| `RESUME_PARSER_BUSY` | 503 | existing | The resume parser is saturated; retryable on a job. |
+| `VOICE_DISABLED` | 503 | new | Spoken interviews are disabled. |
+| `VOICE_TOKEN_TIMEOUT` | 503 | new | The voice provider timed out. |
+| `PROCESSING_ERROR` | job only | existing | Unclassified job failure; retryable. |
+| `WORKER_LEASE_EXPIRED` | job only | existing | A `RETRYING` job whose worker lease expired before it finished. |
+| `RETRIES_EXHAUSTED_<code>` | job only | existing | A `FAILED` job whose last retryable failure had `<code>`, one of the codes above. |
+| `RETRIES_EXHAUSTED_DLQ` | job only | existing | A `FAILED` job that reached the dead-letter queue past its attempt limit. |
+| `RETRIES_EXHAUSTED_WORKER_LEASE_EXPIRED` | job only | existing | A `FAILED` job whose last worker lease expired with no attempts left. |
 
-`JobError.code` values: the AI and processing codes above, `PROCESSING_ERROR`, `RETRIES_EXHAUSTED_*` and
-`HTTP_<status>` (all existing). `retryable` follows the existing `JobFailureClassifier`.
+`JobError.retryable` follows `JobFailureClassifier`: AI codes carry their own flag, and other codes are retryable
+for HTTP 408, 429 and 5xx.
 
 ## 11. Backend obligations
 

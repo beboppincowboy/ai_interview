@@ -29,6 +29,7 @@ class ExperienceService(
         userId
     ))
 
+    /** Renaming re-keys duplicate detection; 409 EXPERIENCE_DUPLICATE if the new title + description matches another experience. */
     @Transactional
     fun rename(userId: UUID, experienceId: UUID, request: ExperienceRenameRequest): Experience {
         val title = RequestValidation.text("title", request.title, 1, 120)
@@ -183,7 +184,7 @@ class ExperienceService(
 
     private fun duplicateExperienceConflict() = ApiRequestException(
         HttpStatus.CONFLICT,
-        "CONFLICT",
+        "EXPERIENCE_DUPLICATE",
         "An experience with this title and description already exists"
     )
 

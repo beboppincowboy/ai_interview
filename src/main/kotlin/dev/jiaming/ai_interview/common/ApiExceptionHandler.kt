@@ -2,6 +2,7 @@ package dev.jiaming.ai_interview.common
 
 import dev.jiaming.ai_interview.gemini.GeminiException
 import dev.jiaming.ai_interview.resume.ResumeExtractionException
+import dev.jiaming.ai_interview.resume.ResumeParserBusyException
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -21,6 +22,11 @@ class ApiExceptionHandler {
     fun handleResumeExtractionException(exception: ResumeExtractionException) =
         ApiErrorResponse("RESUME_EXTRACTION_FAILED", exception.message)
 
+    @ExceptionHandler(ResumeParserBusyException::class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    fun handleResumeParserBusyException(exception: ResumeParserBusyException) =
+        ApiErrorResponse("RESUME_PARSER_BUSY", exception.message)
+
     @ExceptionHandler(GeminiException::class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     fun handleGeminiException(exception: GeminiException) =
@@ -33,7 +39,7 @@ class ApiExceptionHandler {
     @ExceptionHandler(ResponseStatusException::class)
     fun handleResponseStatusException(exception: ResponseStatusException): ResponseEntity<ApiErrorResponse> =
         ResponseEntity.status(exception.statusCode).body(
-            ApiErrorResponse(codeFor(exception.statusCode.value()), exception.reason ?: "Request failed")
+            ApiErrorResponse(ErrorCodes.forStatus(exception.statusCode), exception.reason ?: "Request failed")
         )
 
     @ExceptionHandler(
@@ -55,18 +61,6 @@ class ApiExceptionHandler {
     fun handleUnexpectedException(exception: Exception): ApiErrorResponse {
         log.error("api_request_failed exceptionType={}", exception.javaClass.name, exception)
         return ApiErrorResponse("INTERNAL_ERROR", "The request could not be completed")
-    }
-
-    private fun codeFor(status: Int): String = when (status) {
-        400 -> "INVALID_REQUEST"
-        404 -> "NOT_FOUND"
-        409 -> "CONFLICT"
-        413 -> "UPLOAD_TOO_LARGE"
-        415 -> "UNSUPPORTED_FILE_TYPE"
-        422 -> "UNPROCESSABLE_CONTENT"
-        429 -> "RATE_LIMITED"
-        503 -> "SERVICE_UNAVAILABLE"
-        else -> "REQUEST_FAILED"
     }
 
     private companion object {

@@ -3,6 +3,15 @@ package dev.jiaming.ai_interview.common
 import dev.jiaming.ai_interview.gemini.GeminiErrorCode
 import dev.jiaming.ai_interview.gemini.GeminiException
 import dev.jiaming.ai_interview.resume.ResumeExtractionException
+import dev.jiaming.ai_interview.resume.ResumeParserBusyException
+import dev.jiaming.ai_interview.storage.S3ObjectStorageService
+import dev.jiaming.ai_interview.storage.StorageProperties
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.mock
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
+import software.amazon.awssdk.services.s3.model.S3Exception
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -85,6 +94,20 @@ class ApiExceptionHandlerContractTests {
     }
 
     @Test
+    fun storageFailureIsBadGatewayWithStorageUnavailable() {
+        perform("storage")
+            .andExpect(status().isBadGateway)
+            .andExpect(jsonPath("$.code").value("STORAGE_UNAVAILABLE"))
+    }
+
+    @Test
+    fun resumeParserBusyIsServiceUnavailableWithItsOwnCode() {
+        perform("parser-busy")
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.code").value("RESUME_PARSER_BUSY"))
+    }
+
+    @Test
     fun oversizedUploadIsPayloadTooLarge() {
         perform("too-large")
             .andExpect(status().isContentTooLarge)
@@ -118,6 +141,8 @@ class ApiExceptionHandlerContractTests {
             "gemini" -> throw GeminiException(GeminiErrorCode.SAFETY, "blocked", false)
             "extraction" -> throw ResumeExtractionException("Encrypted PDF")
             "too-large" -> throw MaxUploadSizeExceededException(10)
+            "storage" -> { failingStorage().delete("resumes/key"); "unreachable" }
+            "parser-busy" -> throw ResumeParserBusyException()
             else -> throw IllegalStateException("unexpected")
         }
 
@@ -126,4 +151,12 @@ class ApiExceptionHandlerContractTests {
     }
 
     data class Payload(val value: String)
+
+    companion object {
+        /** A real S3ObjectStorageService whose S3 client fails every call, as when S3 is unreachable. */
+        fun failingStorage() = S3ObjectStorageService(
+            mock<S3Client> { on { deleteObject(any<DeleteObjectRequest>()) } doThrow S3Exception.builder().message("down").build() },
+            StorageProperties(null, null, "bucket", null, null, 24),
+        )
+    }
 }

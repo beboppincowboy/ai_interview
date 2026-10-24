@@ -15,6 +15,7 @@ import dev.jiaming.ai_interview.suggestions.SuggestionsView
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.io.File
 import java.util.UUID
 
 class ContractFreezeTests {
@@ -48,5 +49,26 @@ class ContractFreezeTests {
 		assertThat(GeminiErrorCode.MAX_TOKENS).isEqualTo("GEMINI_MAX_TOKENS")
 		assertThat(GeminiErrorCode.EMPTY_RESPONSE).isEqualTo("GEMINI_EMPTY_RESPONSE")
 		assertThat(GeminiErrorCode.INVALID_RESPONSE).isEqualTo("GEMINI_INVALID_RESPONSE")
+	}
+	@Test fun documentedErrorCodesAreFrozen() {
+		val section = File("docs/api/frontend-api-contract.md").readText().substringAfter("## 10. Error codes").substringBefore("\n## ")
+		val documented = section.lines().filter { it.startsWith("| `") }
+			.flatMap { row -> Regex("`([A-Z_<>a-z]+)`").findAll(row.split("|")[1]).map { it.groupValues[1] } }
+		assertThat(documented).containsExactly(
+			"INVALID_REQUEST", "ANSWER_EMPTY", "ANSWER_TOO_LONG", "TRANSCRIPT_TOO_LARGE", "RESUME_REFERENCE_REQUIRED",
+			"NOT_FOUND", "RESUME_NOT_FOUND", "TARGET_JOB_NOT_FOUND", "EXPERIENCE_NOT_FOUND", "PRACTICE_SET_NOT_FOUND",
+			"QUESTION_NOT_FOUND", "ATTEMPT_NOT_FOUND", "JOB_NOT_FOUND", "VOICE_SESSION_NOT_FOUND", "VOICE_QUESTION_NOT_FOUND",
+			"CONFLICT", "EXPERIENCE_DUPLICATE", "RESUME_NOT_READY", "NO_EXPERIENCE_SOURCES", "PRACTICE_SET_NOT_READY",
+			"PRACTICE_SET_NOT_FAILED", "QUESTION_LIMIT_REACHED", "ANSWER_UNCHANGED", "ATTEMPT_NOT_FAILED",
+			"VOICE_SESSION_EXPIRED", "VOICE_SESSION_NOT_DRAFT", "VOICE_SESSION_ALREADY_SAVED", "VOICE_RUN_EXPIRED",
+			"VOICE_TOKEN_BUDGET_EXHAUSTED", "VOICE_REPORT_NOT_RETRYABLE", "UPLOAD_TOO_LARGE", "UNSUPPORTED_FILE_TYPE",
+			"UNPROCESSABLE_CONTENT", "RESUME_EXTRACTION_FAILED", "RATE_LIMITED", "VOICE_TOKEN_RATE_LIMITED",
+			"INTERNAL_ERROR", "REQUEST_FAILED", "STORAGE_UNAVAILABLE", "VOICE_TOKEN_UNAVAILABLE",
+			"GEMINI_NOT_CONFIGURED", "GEMINI_RATE_LIMITED", "GEMINI_TIMEOUT", "GEMINI_UPSTREAM_ERROR", "GEMINI_SAFETY",
+			"GEMINI_RECITATION", "GEMINI_MAX_TOKENS", "GEMINI_EMPTY_RESPONSE", "GEMINI_INVALID_RESPONSE",
+			"SERVICE_UNAVAILABLE", "RESUME_PARSER_BUSY", "VOICE_DISABLED", "VOICE_TOKEN_TIMEOUT",
+			"PROCESSING_ERROR", "WORKER_LEASE_EXPIRED", "RETRIES_EXHAUSTED_<code>", "RETRIES_EXHAUSTED_DLQ",
+			"RETRIES_EXHAUSTED_WORKER_LEASE_EXPIRED",
+		)
 	}
 }

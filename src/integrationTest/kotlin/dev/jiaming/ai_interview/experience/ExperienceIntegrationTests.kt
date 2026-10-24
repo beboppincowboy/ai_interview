@@ -88,7 +88,7 @@ class ExperienceIntegrationTests {
 		assertThatThrownBy { service.rename(userId, first.id, ExperienceRenameRequest("Existing role")) }
 			.isInstanceOfSatisfying(ApiRequestException::class.java) {
 				assertThat(it.status()).isEqualTo(HttpStatus.CONFLICT)
-				assertThat(it.code()).isEqualTo("CONFLICT")
+				assertThat(it.code()).isEqualTo("EXPERIENCE_DUPLICATE")
 				assertThat(it.message).isEqualTo("An experience with this title and description already exists")
 				assertThat(it.message).doesNotContain("Existing role", first.id.toString())
 			}

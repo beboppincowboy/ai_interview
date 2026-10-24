@@ -106,13 +106,13 @@ class ExperienceControllerTests {
 	fun patchDuplicateContentReturnsSanitizedConflict() {
 		val existing = experience()
 		Mockito.`when`(service.rename(eq(userId), eq(existing.id), any())).thenThrow(
-			ApiRequestException(HttpStatus.CONFLICT, "CONFLICT", "An experience with this title and description already exists")
+			ApiRequestException(HttpStatus.CONFLICT, "EXPERIENCE_DUPLICATE", "An experience with this title and description already exists")
 		)
 
 		mockMvc.perform(patch("/api/experiences/${existing.id}").contentType(MediaType.APPLICATION_JSON)
 			.content("""{"title":"Sensitive original title"}"""))
 			.andExpect(status().isConflict)
-			.andExpect(jsonPath("$.code").value("CONFLICT"))
+			.andExpect(jsonPath("$.code").value("EXPERIENCE_DUPLICATE"))
 			.andExpect(jsonPath("$.message").value("An experience with this title and description already exists"))
 	}
 
