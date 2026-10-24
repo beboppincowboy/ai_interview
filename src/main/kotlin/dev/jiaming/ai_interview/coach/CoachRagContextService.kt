@@ -25,7 +25,7 @@ class CoachRagContextService @Autowired constructor(
 ) {
     internal constructor(chunker: SectionAwareTextChunker, indexingService: RagIndexingService,
         retrievalService: RagRetrievalService, meterRegistry: MeterRegistry) :
-        this(chunker, indexingService, retrievalService, meterRegistry, RagProperties(1024, 8, "gemini-embedding-001", "section-block-v3"))
+        this(chunker, indexingService, retrievalService, meterRegistry, RagProperties(1024, "gemini-embedding-001", "section-block-v3"))
 
     /** Job-fit context: at most [RagProperties.assessmentMaxSnippets] retrieved snippets. Resume + target job text totalling at most 6,000 chars is sent whole with no retrieval or budget (vectorBacked=false); RAG failures fall back to local chunks, never throw. */
     fun jobFitContext(input: CoachAnalysisInput) = ragContext(input.resume(), input.targetJob(), jobFitQueries(input),

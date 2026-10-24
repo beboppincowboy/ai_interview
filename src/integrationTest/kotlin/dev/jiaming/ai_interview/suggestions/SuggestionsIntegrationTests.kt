@@ -368,7 +368,7 @@ class SuggestionsIntegrationTests {
             targetJobs = TargetJobService(jdbc, local, targetJobDocuments)
             experiences = ExperienceService(jdbc, ContentHasher(), submissions)
             val rag = CoachRagContextService(SectionAwareTextChunker(), indexing, retrieval, SimpleMeterRegistry(),
-                RagProperties(1024, 8, "gemini-embedding-001", "section-block-v3"))
+                RagProperties(1024, "gemini-embedding-001", "section-block-v3"))
             val coach = AiResumeCoachService(client, rag, CoachPromptBuilder(), CoachResponseMapper(mapper), SimpleMeterRegistry())
             val handler = ExperienceSuggestionsJobHandler(coach, resolver, suggestions)
             val otherHandlers = JobType.entries.filter { it != JobType.EXPERIENCE_SUGGESTIONS }.map { type ->

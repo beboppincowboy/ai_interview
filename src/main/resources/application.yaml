@@ -84,7 +84,6 @@ app:
     thinking-level: ${GEMINI_THINKING_LEVEL:medium}
   rag:
     embedding-dimensions: ${RAG_EMBEDDING_DIMENSIONS:1024}
-    default-top-k: ${RAG_DEFAULT_TOP_K:8}
     resume-candidate-top-k: ${RAG_RESUME_CANDIDATE_TOP_K:6}
     job-description-candidate-top-k: ${RAG_JOB_DESCRIPTION_CANDIDATE_TOP_K:4}
     assessment-max-snippets: ${RAG_ASSESSMENT_MAX_SNIPPETS:14}

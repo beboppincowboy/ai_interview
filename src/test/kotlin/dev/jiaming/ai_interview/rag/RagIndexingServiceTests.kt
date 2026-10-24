@@ -154,7 +154,7 @@ class RagIndexingServiceTests {
         vectorStoreProvider,
         repository,
         retrievalService,
-        RagProperties(1_024, 8, "gemini-embedding-001", "section-block-v3"),
+        RagProperties(1_024, "gemini-embedding-001", "section-block-v3"),
         SectionAwareTextChunker(),
         SimpleMeterRegistry(),
         Clock.fixed(NOW, ZoneOffset.UTC)
