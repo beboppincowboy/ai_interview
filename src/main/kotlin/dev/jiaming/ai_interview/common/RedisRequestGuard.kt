@@ -32,6 +32,16 @@ class RedisRequestGuard(
     fun assertAiAllowed(action: String) = assertAllowed(action, properties.rateLimit.aiLimit)
     fun assertUploadAllowed() = assertAllowed("resume-upload", properties.rateLimit.uploadLimit)
 
+    /**
+     * Replays the stored response when a client retries with the same `Idempotency-Key` request header; it does not
+     * dedupe by request body. It acts only when the current request carries that header: without it, with idempotency
+     * disabled, or when Redis is unavailable, it just runs [work].
+     *
+     * Responses are kept per (action, client IP, key) for the configured TTL. [requestFingerprintSource] only detects
+     * key reuse: the same key on a request with a different fingerprint gets 409 `CONFLICT`, and a retry while the first
+     * request is still running gets a retryable 503 `SERVICE_UNAVAILABLE`. A [work] that throws stores nothing, so the
+     * key can be retried.
+     */
     fun <T> withIdempotentRetryCache(
         action: String,
         requestFingerprintSource: Any?,
@@ -68,7 +78,10 @@ class RedisRequestGuard(
         return response
     }
 
-    /** Like [withIdempotentRetryCache], but a replay also returns the first response's HTTP status. */
+    /**
+     * Like [withIdempotentRetryCache] (acts only with an `Idempotency-Key` header; reused key 409, in-flight key 503),
+     * but a replay also returns the first response's HTTP status.
+     */
     fun <T : Any> withIdempotentHttpCache(
         action: String,
         requestFingerprintSource: Any?,
