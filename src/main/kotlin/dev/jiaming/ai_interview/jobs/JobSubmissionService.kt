@@ -34,7 +34,7 @@ class JobSubmissionService(
      * @param dedupKey defaults to a fingerprint of [type] and [resourceId] only, so a resubmit with a changed [payload]
      *   gets the old active job back. A null [resourceId] makes the default null, and a null key never reuses.
      *   Pass another key (from [fingerprint]) to dedupe on something else.
-     * @param initialResult the job's starting result checkpoint, e.g. completed work carried over from a failed job.
+     * @param initialCheckpoint the job's starting checkpoint, e.g. completed work carried over from a failed job.
      */
     fun submit(
         type: JobType,
@@ -42,12 +42,13 @@ class JobSubmissionService(
         resourceId: UUID?,
         payload: Any,
         dedupKey: String? = resourceId?.let { fingerprint(type.name, it) },
-        initialResult: JsonNode? = null,
+        initialCheckpoint: JsonNode? = null,
     ): JobAcceptedResponse {
         assertApiAvailable()
         if (type != JobType.RESUME_EXTRACTION) requestGuard.assertAiAllowed(AI_JOB_ACTION)
-        return createOrReuse(type, resourceType, resourceId, payload, dedupKey, initialResult)
+        return createOrReuse(type, resourceType, resourceId, payload, dedupKey, initialCheckpoint)
     }
+    /** Hashes [action] and [source] into a job dedup key for [submit]/[findReusable]. */
     fun fingerprint(action: String, source: Any): String = fingerprintService.fingerprint(action, source)
     /** Throws 503 when this process runs in worker-only mode; [submit] calls it too, so calling it first only fails fast. */
     fun assertApiAvailable() {
@@ -55,8 +56,8 @@ class JobSubmissionService(
             "This process is running in worker-only mode and does not accept background jobs")
     }
     /** The user's active job of [type] with this dedup key, if any; a read only, it submits nothing. */
-    fun findReusable(type: JobType, fingerprint: String?): Optional<JobAcceptedResponse> = if (fingerprint == null) Optional.empty()
-        else jobStore.findReusable(localUserService.localUserId(), type, fingerprint).map { JobAcceptedResponse.from(it, true) }
+    fun findReusable(type: JobType, dedupKey: String?): Optional<JobAcceptedResponse> = if (dedupKey == null) Optional.empty()
+        else jobStore.findReusable(localUserService.localUserId(), type, dedupKey).map { JobAcceptedResponse.from(it, true) }
 
     private fun createOrReuse(
         type: JobType,
@@ -64,14 +65,14 @@ class JobSubmissionService(
         resourceId: UUID?,
         requestPayload: Any,
         fingerprint: String?,
-        initialResultPayload: JsonNode?,
+        initialCheckpointPayload: JsonNode?,
     ): JobAcceptedResponse {
         val existing = findReusable(type, fingerprint)
         if (existing.isPresent) return existing.get()
         val userId = localUserService.localUserId()
         val request = objectMapper.valueToTree<JsonNode>(requestPayload)
         val created = jobStore.createIfAbsentWithInitialResult(
-            userId, type, resourceType, resourceId, request, fingerprint, properties.maxAttempts, initialResultPayload,
+            userId, type, resourceType, resourceId, request, fingerprint, properties.maxAttempts, initialCheckpointPayload,
         )
         if (created.isEmpty) return findReusable(type, fingerprint).orElseThrow { IllegalStateException("A matching active job won the submission race but could not be loaded") }
         val job = created.get()

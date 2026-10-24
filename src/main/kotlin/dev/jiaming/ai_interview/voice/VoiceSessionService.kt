@@ -190,7 +190,7 @@ class VoiceSessionService(
                 VoiceReportPayload.RESOURCE,
                 sessionId,
                 VoiceReportPayload(sessionId, current.view.resumeId, current.view.targetJobId),
-                initialResult = transferableCheckpoints(current.view, oldJob.resultPayload),
+                initialCheckpoint = transferableCheckpoints(current.view, oldJob.resultPayload),
             )
             val updated = jdbcTemplate.update(
                 "UPDATE ai_interview_app.voice_sessions SET report = NULL, report_job_id = ? WHERE id = ? AND user_id = ? AND saved_at IS NOT NULL AND submission_job_id = ? AND report_job_id = ?",

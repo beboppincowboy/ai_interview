@@ -25,7 +25,7 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
     @Transactional
     fun createIfAbsentWithInitialResult(userId: UUID, jobType: JobType, resourceType: String?, resourceId: UUID?,
                                         requestPayload: JsonNode?, requestFingerprint: String?, maxAttempts: Int,
-                                        initialResultPayload: JsonNode?): Optional<BackgroundJob> {
+                                        initialCheckpointPayload: JsonNode?): Optional<BackgroundJob> {
         val jobId = UUID.randomUUID()
         val insertedIds = jdbcTemplate.query("""
             INSERT INTO ai_interview_app.background_jobs (
@@ -34,7 +34,7 @@ class BackgroundJobStore(private val jdbcTemplate: JdbcTemplate, private val obj
             ) VALUES (?, ?, ?, ?, ?, 'QUEUED', 'QUEUED', ?::jsonb, ?::jsonb, ?, ?, now())
             ON CONFLICT DO NOTHING RETURNING id
             """, { rs, _ -> rs.getObject("id", UUID::class.java) }, jobId, userId, jobType.name,
-            resourceType, resourceId, json(requestPayload), initialResultPayload?.let(::json), requestFingerprint, maxAttempts)
+            resourceType, resourceId, json(requestPayload), initialCheckpointPayload?.let(::json), requestFingerprint, maxAttempts)
         return Optional.ofNullable(insertedIds.firstOrNull()?.let { findById(it).orElse(null) })
     }
 

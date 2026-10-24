@@ -294,6 +294,8 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     const job = await targetJob();
     const rejected = await errorOf(post(`${base}/api/practice-sets`, { resumeId: resume.id, targetJobId: job.id, mode: "VOICE" }));
     expect(rejected).toMatchObject({ status: 400, code: "INVALID_REQUEST" });
+    const nullMode = await errorOf(post(`${base}/api/practice-sets`, { resumeId: resume.id, targetJobId: job.id, mode: null }));
+    expect(nullMode).toMatchObject({ status: 400, code: "INVALID_REQUEST", message: "mode is invalid" });
     const created = await post<PracticeSetCreated>(`${base}/api/practice-sets`, { resumeId: resume.id, targetJobId: job.id });
     expect(created).toMatchObject({ duplicate: false, practiceSet: { mode: "PRACTICE" } });
     await settle([created.practiceSet.latestJob!.jobId]);

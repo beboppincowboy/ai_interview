@@ -153,7 +153,7 @@ class JobSubmissionServiceTests {
         assertThatThrownBy { service.submit(JobType.JOB_FIT, "job-fit", resourceId, mapOf("n" to 2), dedupKey = "explicit") }
             .hasMessageContaining("429 TOO_MANY_REQUESTS")
         assertThatThrownBy {
-            service.submit(JobType.VOICE_REPORT, "voice-session", resourceId, mapOf("n" to 3), initialResult = ObjectMapper().createObjectNode())
+            service.submit(JobType.VOICE_REPORT, "voice-session", resourceId, mapOf("n" to 3), initialCheckpoint = ObjectMapper().createObjectNode())
         }.hasMessageContaining("429 TOO_MANY_REQUESTS")
 
         Mockito.verify(requestGuard, Mockito.times(3)).assertAiAllowed(JobSubmissionService.AI_JOB_ACTION)
@@ -168,14 +168,14 @@ class JobSubmissionServiceTests {
         assertThatThrownBy { workerOnly.submit(JobType.RESUME_SCORE, "resume", UUID.randomUUID(), mapOf("n" to 1)) }
             .hasMessageContaining("503 SERVICE_UNAVAILABLE")
         assertThatThrownBy {
-            workerOnly.submit(JobType.JOB_FIT, "job-fit", null, mapOf("n" to 2), dedupKey = "explicit", initialResult = ObjectMapper().createObjectNode())
+            workerOnly.submit(JobType.JOB_FIT, "job-fit", null, mapOf("n" to 2), dedupKey = "explicit", initialCheckpoint = ObjectMapper().createObjectNode())
         }.hasMessageContaining("503 SERVICE_UNAVAILABLE")
 
         Mockito.verifyNoInteractions(requestGuard, jobStore, dispatcher)
     }
 
     @Test
-    fun initialResultReachesTheStoreAfterTheRateLimit() {
+    fun initialCheckpointReachesTheStoreAfterTheRateLimit() {
         val created = job(JobStatus.QUEUED)
         val checkpoint = ObjectMapper().createObjectNode().put("answered", 1)
         Mockito.`when`(localUserService.localUserId()).thenReturn(userId)
@@ -185,7 +185,7 @@ class JobSubmissionServiceTests {
         ).thenReturn(Optional.of(created))
 
         val response = service.submit(
-            JobType.VOICE_REPORT, "voice-session", UUID.randomUUID(), mapOf("n" to 1), dedupKey = "voice", initialResult = checkpoint
+            JobType.VOICE_REPORT, "voice-session", UUID.randomUUID(), mapOf("n" to 1), dedupKey = "voice", initialCheckpoint = checkpoint
         )
 
         assertThat(response.jobId).isEqualTo(created.id)

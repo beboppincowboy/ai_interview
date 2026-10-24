@@ -605,7 +605,7 @@ export function createMockStore(options: MockStoreOptions = {}) {
   const createPracticeSet = (input: { resumeId?: unknown; targetJobId?: unknown; mode?: unknown }):
     { status: 200 | 201; body: PracticeSetCreated } => tx((db) => {
     // An omitted mode defaults to PRACTICE, as on the server.
-    if ((input.mode ?? "PRACTICE") !== "PRACTICE") throw new MockHttpError(400, "INVALID_REQUEST", "mode is invalid");
+    if (input.mode !== undefined && input.mode !== "PRACTICE") throw new MockHttpError(400, "INVALID_REQUEST", "mode is invalid");
     const resumeId = String(input.resumeId ?? "");
     const targetJobId = String(input.targetJobId ?? "");
     requirePair(db, resumeId, targetJobId);
