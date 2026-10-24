@@ -24,10 +24,10 @@ export const retryVoiceReport = (id: string) =>
   apiRequest<VoiceSession>(`${path(id)}/report/retry`, { method: "POST", body: {}, retries: 0 });
 
 export const discardVoiceDraft = (id: string) =>
-  apiRequest<void>(`${path(id)}/draft`, { method: "DELETE", retries: 0 });
+  apiRequest<void>(`${path(id)}/draft`, { method: "DELETE" });
 
 export const deleteVoiceSession = (id: string) =>
-  apiRequest<void>(path(id), { method: "DELETE", retries: 0 });
+  apiRequest<void>(path(id), { method: "DELETE" });
 
 export function useVoiceSession(id: string) {
   return useQuery({ queryKey: voiceKeys.session(id), queryFn: ({ signal }) => getVoiceSession(id, signal) });
