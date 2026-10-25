@@ -16,7 +16,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
 /** RAW candidate passage bound to one frozen snapshot source. [id] is `sourceType:resourceId:contextId`, stable across rounds and
- * independent of labels; [text] is a verbatim substring of the frozen source text. Construction does not validate membership. */
+ * independent of labels; the retriever supplies its RAG chunk context ID. [contentHash] is the frozen source label/text hash, not the passage hash.
+ * [sourceLabel] and [text] are RAW, unescaped source data. Construction validates neither ID format nor snapshot membership. */
 data class JobFitEvidencePassage(
     val id: String,
     val snapshotId: String,
@@ -27,13 +28,15 @@ data class JobFitEvidencePassage(
     val text: String,
 )
 
-/** Passages per query in request order; [degradedSources] lists candidate source kinds searched through local chunks instead of vectors. */
+/** RAW passages keyed by the original query, in first-occurrence request order; duplicate keys collapse and blank queries map to [].
+ * [degradedSources] aggregates kinds with any local fallback across this call; a kind can also have vector results. */
 data class JobFitRetrieval(
     val passagesByQuery: Map<String, List<JobFitEvidencePassage>>,
     val degradedSources: Set<JobFitSourceType>,
 )
 
-/** Searches a frozen snapshot's resume and experiences (never the target job) and binds every hit to its snapshot source. */
+/** Searches a caller-authorized frozen snapshot's resume and experiences, excluding target-job candidate evidence.
+ * Trusts snapshot ownership established by JobFitSourceSnapshotService; performs no owner lookup. */
 @Service
 class JobFitEvidenceRetriever(
     private val chunker: SectionAwareTextChunker,
@@ -41,10 +44,13 @@ class JobFitEvidenceRetriever(
     private val retrievalService: RagRetrievalService,
     private val properties: RagProperties,
 ) {
-    /** Blocks on indexing and vector search; each query returns at most [RagProperties.assessmentMaxSnippets] RRF-ranked passages with
-     * per-section limits, ordered deterministically. Blank queries return []. Vector hits that are not verbatim in a snapshot source are dropped.
-     * Indexing or search failures fall back to local chunks and mark the source kind degraded; interruption propagates (as CancellationException
-     * when indexing swallowed it). */
+    /** Synchronously blocks on database indexing, embedding and vector search, including for empty/all-blank query lists; may write shared indexes.
+     * Accepts RAW queries; trims them for search but preserves original map keys. Duplicate keys repeat work and retain the last result.
+     * Returns at most [RagProperties.assessmentMaxSnippets] RAW passages per query, fusing source-separated ranks with RRF and ID tie breaks.
+     * Limits each source/section to [RagProperties.maxSnippetsPerSection]; drops unbound or non-verbatim vector hits.
+     * Index/search runtime failures use local term-overlap chunks and mark degradation; local fallback failures propagate.
+     * Runtime exceptions reaching this boundary with interruption causes/flags propagate; an indexing return with its flag set throws CancellationException.
+     */
     fun retrieve(snapshot: JobFitSourceSnapshot, queries: List<String>): JobFitRetrieval {
         val degraded = linkedSetOf<JobFitSourceType>()
         val groups = CANDIDATE_TYPES.map { type -> indexGroup(type, snapshot.sources.filter { it.sourceType == type }, degraded) }
@@ -66,7 +72,6 @@ class JobFitEvidenceRetriever(
                 log.warn("job_fit_index_fallback sourceType={}", source.sourceType)
                 null
             }
-            // RagIndexingService swallows indexing failures, including a wrapped interrupt; the restored flag is the only signal left.
             if (Thread.currentThread().isInterrupted) throw CancellationException("Job Fit retrieval interrupted")
             if (handle == null) local += source else indexed.getOrPut(handle) { mutableListOf() } += source
         }
@@ -103,10 +108,10 @@ class JobFitEvidenceRetriever(
         }
     }
 
-    // ponytail: term-overlap ranking over frozen chunks; swap for BM25 if degraded retrieval quality matters.
+    // shortcut: term-overlap ranking over frozen chunks, upgrade to BM25 if degraded retrieval quality matters.
     private fun localSearch(
         snapshot: JobFitSourceSnapshot, sources: List<JobFitFrozenSource>, query: String, localChunks: MutableMap<UUID, List<LocalChunk>>,
-    ): List<RankedList> {
+    ): RankedList {
         val terms = terms(query)
         val scored = sources.flatMap { source ->
             localChunks.getOrPut(source.resourceId) {
@@ -117,7 +122,7 @@ class JobFitEvidenceRetriever(
             }.map { it.candidate to it.terms.count(terms::contains) }
         }
         val ranked = scored.filter { it.second > 0 }.sortedWith(compareByDescending<Pair<Candidate, Int>> { it.second }.thenBy { it.first.passage.id })
-        return listOf(RankedList(ranked.take(properties.resumeCandidateTopK()).map { it.first }))
+        return RankedList(ranked.take(properties.resumeCandidateTopK()).map { it.first })
     }
 
     private fun terms(text: String) = text.lowercase().split(TERM_SEPARATOR).filter { it.length > 1 }.toSet()
@@ -140,7 +145,7 @@ class JobFitEvidenceRetriever(
     }
 
     private fun passage(snapshot: JobFitSourceSnapshot, source: JobFitFrozenSource, contextId: String, text: String) = JobFitEvidencePassage(
-        "${source.sourceType.name.lowercase()}:${source.resourceId}:$contextId", snapshot.snapshotId, source.sourceType,
+        "${documentType(source.sourceType).metadataValue()}:${source.resourceId}:$contextId", snapshot.snapshotId, source.sourceType,
         source.resourceId, source.contentHash, source.sourceLabel, text,
     )
 

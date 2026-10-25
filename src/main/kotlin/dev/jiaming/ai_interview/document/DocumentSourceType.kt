@@ -7,5 +7,6 @@ enum class DocumentSourceType(private val metadata: String) {
     EXPERIENCE("experience"),
     ;
 
+    /** Pure stable RAG metadata token: `resume`, `job_description` or `experience`; performs no I/O. */
     fun metadataValue(): String = metadata
 }
