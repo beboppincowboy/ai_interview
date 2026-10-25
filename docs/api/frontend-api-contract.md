@@ -411,11 +411,14 @@ the page can render "not run yet". Either ID missing returns `404 RESUME_NOT_FOU
   "targetJobId": "…",
   "result": null,
   "createdAt": null,
-  "latestJob": null
+  "latestJob": null,
+  "freshness": "UNKNOWN"
 }
 ```
 
-When a fit has succeeded, `result` is a `JobFitResult` (section 8.2).
+When a fit has succeeded, `result` is a `JobFitResult` (section 8.2). `freshness` is `CURRENT`, `OUTDATED`, or
+`UNKNOWN`, computed independently of whether a newer Job Fit job is running. Historical results without agentic
+metadata have `UNKNOWN` freshness.
 
 **`SuggestionsView`**:
 
@@ -676,6 +679,83 @@ These are the only job types. A `SUCCEEDED` job ends at stage `COMPLETED`; a `FA
   "feedback": [ { "priority": "HIGH", "message": "Move the latency work to the top of the Acme role." } ]
 }
 ```
+
+Legacy results retain the shape above. Agentic results also carry `agenticMetadata` with schema version `1`:
+
+```json
+{
+  "agenticMetadata": {
+    "schemaVersion": 1,
+    "snapshotId": "snapshot-1",
+    "sourceManifest": [
+      { "sourceType": "RESUME", "resourceId": "resume-id", "sourceLabel": "Resume", "contentHash": "sha256:…" },
+      { "sourceType": "TARGET_JOB", "resourceId": "job-id", "sourceLabel": "Platform Engineer", "contentHash": "sha256:…" }
+    ],
+    "assessments": [
+      {
+        "requirementId": "req-1",
+        "requirement": "Kotlin services",
+        "status": "SUPPORTED",
+        "targetJobEvidenceIds": ["job-passage-1"],
+        "evidenceIds": ["resume-passage-1"],
+        "conflictIds": [],
+        "missingEvidenceDescription": null
+      }
+    ],
+    "evidenceCatalog": [
+      {
+        "id": "resume-passage-1",
+        "snapshotId": "snapshot-1",
+        "sourceType": "RESUME",
+        "resourceId": "resume-id",
+        "contentHash": "sha256:…",
+        "sourceLabel": "Resume",
+        "passage": "Built Kotlin services for payments.",
+        "quote": "Built Kotlin services"
+      }
+    ],
+    "conflicts": [],
+    "judgments": [
+      {
+        "requirementId": "req-1",
+        "state": "JUDGED",
+        "provenance": { "provider": "JEV", "model": "jev-1.14.0", "rubricVersion": "job-fit-v1" },
+        "status": "SUPPORTED",
+        "evidenceIds": ["resume-passage-1"],
+        "missingEvidence": [],
+        "providerProbabilities": { "SUPPORTED": 0.91 }
+      }
+    ],
+    "trace": [
+      { "kind": "VERIFICATION", "summary": "All cited passages were checked against the frozen snapshot.", "round": 1 }
+    ],
+    "fallbackUsed": false,
+    "fallbackReason": null
+  }
+}
+```
+
+`sourceManifest` freezes source type, resource ID, immutable label, and content hash for the run. `evidenceCatalog`
+`id` values are run-local opaque references; each item must name the same `snapshotId`, match a manifest entry, and
+hold a quote that is an exact substring of its frozen `passage`. Assessment `targetJobEvidenceIds` must refer to
+`TARGET_JOB` items; candidate `evidenceIds` must refer only to `RESUME` or `EXPERIENCE` items. Unknown IDs and
+cross-snapshot references are invalid. A supported or partially supported assessment must cite candidate evidence;
+`NOT_ESTABLISHED` means the frozen records do not establish the requirement. Each assessment also points to a
+missing-evidence description when it is not fully supported.
+
+`status` is `SUPPORTED`, `PARTIALLY_SUPPORTED`, or `NOT_ESTABLISHED`; conflicts are separate records containing
+references to at least two candidate source records. An assessment with a conflict cannot be fully supported.
+`judgments` record `JUDGED` or `UNCHECKED` state, status, candidate evidence IDs, missing evidence, and separate
+provider/model/rubric provenance. Optional `providerProbabilities` are finite values from 0 to 1 and do not replace
+the evidence status. Each judgment uses the same candidate evidence IDs as its assessment, and a judged record's
+status matches the canonical assessment. An `UNCHECKED` judgment can only accompany `NOT_ESTABLISHED`.
+
+`fallbackUsed` and `fallbackReason` disclose generator-judgment fallback use (R13). `trace` is a compact user-facing
+decision summary; it does not contain private model reasoning or raw operational logs. The legacy
+`matchedRequirements` list is derived from `SUPPORTED` assessments using their exact quotes. The legacy
+`missingRequirements` list contains every other assessment and its missing-evidence description. This keeps older
+readers useful while canonical clients render requirement statuses and citations. If `agenticMetadata` is absent
+from a saved legacy result, no verification or freshness guarantee is inferred.
 
 **`ExperienceSuggestionsResult`**:
 

@@ -11,4 +11,5 @@ data class FitView(
     val createdAt: Instant?,
     /** Newest background job for this resource, in any status (check [LatestJob.status]); null only if none was ever submitted. */
     val latestJob: LatestJob?,
+    val freshness: JobFitFreshness = JobFitFreshness.UNKNOWN,
 )

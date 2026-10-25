@@ -3,6 +3,7 @@ package dev.jiaming.ai_interview.contract
 import dev.jiaming.ai_interview.coach.AssessmentScores
 import dev.jiaming.ai_interview.coach.Priority
 import dev.jiaming.ai_interview.fit.FitView
+import dev.jiaming.ai_interview.fit.JobFitResult
 import dev.jiaming.ai_interview.ai.AiProviderErrorCode
 import dev.jiaming.ai_interview.history.VoiceSessionHistory
 import dev.jiaming.ai_interview.jobs.JobStage
@@ -44,6 +45,23 @@ class ContractFreezeTests {
 			val fields = view.java.declaredFields.map { it.name }
 			assertThat(fields).describedAs(view.simpleName).contains("latestJob").doesNotContain("activeJob")
 		}
+	}
+	@Test fun jobFitResultAddsNullableAgenticMetadataWithoutRemovingLegacyFields() {
+		assertThat(JobFitResult::class.java.declaredFields.map { it.name })
+			.contains("agenticMetadata", "fitScore", "summary", "matchedRequirements", "missingRequirements", "feedback")
+	}
+	@Test fun fitViewAddsExplicitFreshness() {
+		assertThat(FitView::class.java.declaredFields.map { it.name }).contains("freshness")
+	}
+	@Test fun jobFitEvidenceStatusesAreFrozen() {
+		val status = Class.forName("dev.jiaming.ai_interview.fit.JobFitEvidenceStatus")
+			.enumConstants.map { (it as Enum<*>).name }
+		assertThat(status).containsExactly("SUPPORTED", "PARTIALLY_SUPPORTED", "NOT_ESTABLISHED")
+	}
+	@Test fun jobFitEvidenceContractIsDocumented() {
+		val contract = File("docs/api/frontend-api-contract.md").readText().replace(Regex("\\s+"), " ")
+		assertThat(contract).contains("\"freshness\": \"UNKNOWN\"", "CURRENT`, `OUTDATED`, or `UNKNOWN`")
+		assertThat(contract).contains("schemaVersion", "sourceManifest", "evidenceCatalog", "fallbackUsed", "providerProbabilities")
 	}
 	@Test fun latestJobKeysAreFrozen() {
 		val mapper = ObjectMapper()

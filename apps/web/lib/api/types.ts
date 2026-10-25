@@ -189,6 +189,8 @@ export type FitView = {
   createdAt: string | null;
   /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
   latestJob: LatestJob | null;
+  /** CURRENT, OUTDATED, or UNKNOWN independently of whether a newer Job Fit job is running. */
+  freshness?: JobFitFreshness;
 };
 
 /** Suggestion state for a resume/target-job pair; stale means the current source set changed. */
@@ -303,6 +305,72 @@ export type JobFitResult = {
   matchedRequirements: { requirement: string; evidence: string }[];
   missingRequirements: { requirement: string; guidance: string }[];
   feedback: { priority: Priority; message: string }[];
+  /** Absent or null for legacy one-pass results. */
+  agenticMetadata?: JobFitEvidenceMetadata | null;
+};
+
+export type JobFitEvidenceStatus = "SUPPORTED" | "PARTIALLY_SUPPORTED" | "NOT_ESTABLISHED";
+export type JobFitFreshness = "CURRENT" | "OUTDATED" | "UNKNOWN";
+export type JobFitSourceType = "RESUME" | "TARGET_JOB" | "EXPERIENCE";
+export type JobFitJudgmentState = "JUDGED" | "UNCHECKED";
+export type JobFitTraceKind = "RETRIEVAL" | "JUDGMENT" | "FALLBACK" | "VERIFICATION";
+
+export type JobFitSourceManifestEntry = {
+  sourceType: JobFitSourceType;
+  resourceId: string;
+  sourceLabel: string;
+  contentHash: string;
+};
+
+export type JobFitEvidenceItem = {
+  id: string;
+  snapshotId: string;
+  sourceType: JobFitSourceType;
+  resourceId: string;
+  contentHash: string;
+  sourceLabel: string;
+  passage: string;
+  quote: string;
+};
+
+export type JobFitRequirementAssessment = {
+  requirementId: string;
+  requirement: string;
+  status: JobFitEvidenceStatus;
+  targetJobEvidenceIds: string[];
+  evidenceIds: string[];
+  conflictIds: string[];
+  missingEvidenceDescription: string | null;
+};
+
+export type JobFitEvidenceConflict = { id: string; description: string; evidenceIds: string[] };
+
+export type JobFitJudgmentProvenance = { provider: string; model: string; rubricVersion: string };
+
+export type JobFitJudgment = {
+  requirementId: string;
+  state: JobFitJudgmentState;
+  provenance: JobFitJudgmentProvenance | null;
+  status: JobFitEvidenceStatus | null;
+  evidenceIds: string[];
+  missingEvidence: string[];
+  providerProbabilities: Partial<Record<JobFitEvidenceStatus, number>>;
+};
+
+/** Compact decision summary for inspection; it never contains private model reasoning. */
+export type JobFitTraceEvent = { kind: JobFitTraceKind; summary: string; round: number | null };
+
+export type JobFitEvidenceMetadata = {
+  schemaVersion: 1;
+  snapshotId: string;
+  sourceManifest: JobFitSourceManifestEntry[];
+  assessments: JobFitRequirementAssessment[];
+  evidenceCatalog: JobFitEvidenceItem[];
+  conflicts: JobFitEvidenceConflict[];
+  judgments: JobFitJudgment[];
+  trace: JobFitTraceEvent[];
+  fallbackUsed: boolean;
+  fallbackReason: string | null;
 };
 
 /** Resume or experience that supplied evidence for a suggestion. */
