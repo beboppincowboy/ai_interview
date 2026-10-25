@@ -26,8 +26,10 @@ class JobFitService(
     private val backgroundJobStore: BackgroundJobStore,
     private val objectMapper: ObjectMapper,
     private val transactionOperations: TransactionOperations,
+    private val sourceSnapshots: JobFitSourceSnapshotService,
 ) {
-    /** Reads owner-scoped pair state even when the resume is unready; result/time stay null until a result is saved, while latest job remains visible. */
+    /** Reads owner-scoped pair state even when the resume is unready; result/time stay null until a result is saved, while latest job remains visible.
+     * Freshness compares an agentic result's source manifest with current sources; legacy results are UNKNOWN. */
     fun get(resumeId: UUID, targetJobId: UUID): FitView {
         val userId = localUserService.localUserId()
         requireOwnedInputs(userId, resumeId, targetJobId, lockRows = false, requireReady = false)
@@ -36,7 +38,11 @@ class JobFitService(
             backgroundJobStore.findLatestForResource(userId, FIT_RESOURCE, fitId, listOf(JobType.JOB_FIT))
                 .map(LatestJob::from).orElse(null)
         }
-        return FitView(resumeId, targetJobId, row?.resultPayload?.let { objectMapper.readValue(it, JobFitResult::class.java) }, row?.resultCreatedAt, latestJob)
+        val result = row?.resultPayload?.let { objectMapper.readValue(it, JobFitResult::class.java) }
+        val freshness = result?.agenticMetadata?.let { metadata ->
+            jobFitFreshness(metadata.sourceManifest, sourceSnapshots.currentManifest(userId, resumeId, targetJobId))
+        } ?: JobFitFreshness.UNKNOWN
+        return FitView(resumeId, targetJobId, result, row?.resultCreatedAt, latestJob, freshness)
     }
 
     /** Requires ready owned inputs, then starts or reuses a pair-scoped fit job. */

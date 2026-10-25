@@ -417,8 +417,10 @@ the page can render "not run yet". Either ID missing returns `404 RESUME_NOT_FOU
 ```
 
 When a fit has succeeded, `result` is a `JobFitResult` (section 8.2). `freshness` is `CURRENT`, `OUTDATED`, or
-`UNKNOWN`, independently of whether a newer Job Fit job is running. The current service always returns `UNKNOWN`;
-source-change evaluation is not implemented yet. Historical results without agentic metadata have no freshness guarantee.
+`UNKNOWN`, independently of whether a newer Job Fit job is running. A result with agentic metadata is `OUTDATED` once
+its selected resume, target job, or any of the user's experiences is added, renamed, edited, deleted, or no longer
+ready; otherwise it is `CURRENT`. Reordering alone changes nothing. Historical results without agentic metadata are
+`UNKNOWN` and carry no freshness guarantee.
 
 **`SuggestionsView`**:
 
