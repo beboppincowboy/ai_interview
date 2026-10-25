@@ -42,6 +42,10 @@ class RagIndexingService private constructor(
         meterRegistry: MeterRegistry, clock: Clock
     ) : this(vectorStoreProvider, repository, retrievalService, properties, chunker, meterRegistry, clock, properties.embeddingModel())
 
+    /** Synchronously reads/writes shared index claims and vectors for RAW document text; returns a ready handle or empty for local fallback.
+     * Indexing failures attempt claim/vector cleanup; interruption restores the thread flag and rethrows the runtime failure.
+     * Claim acquisition/read failures propagate.
+     */
     fun ensureIndexed(document: ResolvedDocument): java.util.Optional<RagDocumentIndexHandle> {
         if (vectorStoreProvider.getIfAvailable() == null) return java.util.Optional.empty()
         val identity = RagDocumentIndexIdentity(document.sourceType(), document.contentHash(), embeddingModel,
@@ -112,6 +116,8 @@ class RagIndexingService private constructor(
                 indexId, claimVersion, resolvedDocument.sourceType(), documents.size, embeddingModel)
             return java.util.Optional.of(RagDocumentIndexHandle(indexId, claimVersion))
         } catch (exception: RuntimeException) {
+            val interrupted = Thread.currentThread().isInterrupted ||
+                generateSequence<Throwable>(exception) { it.cause }.any { it is InterruptedException }
             try {
                 markFailed(indexId, claimVersion, "VECTOR_INDEX_FAILED", resolvedDocument)
                 retrievalService.deleteIndexClaim(indexId, claimVersion)
@@ -119,6 +125,10 @@ class RagIndexingService private constructor(
                 log.warn("rag_index_failure_cleanup_failed indexId={} claimVersion={}", indexId, claimVersion)
             }
             log.warn("rag_index_failed indexId={} claimVersion={} sourceType={}", indexId, claimVersion, resolvedDocument.sourceType())
+            if (interrupted || Thread.currentThread().isInterrupted) {
+                Thread.currentThread().interrupt()
+                throw exception
+            }
             return java.util.Optional.empty()
         }
     }

@@ -3,9 +3,14 @@ package dev.jiaming.ai_interview.rag
 import dev.jiaming.ai_interview.document.DocumentChunk
 import dev.jiaming.ai_interview.document.DocumentSourceType
 import dev.jiaming.ai_interview.document.ResolvedDocument
+import dev.jiaming.ai_interview.fit.JobFitEvidenceRetriever
+import dev.jiaming.ai_interview.fit.JobFitFrozenSource
+import dev.jiaming.ai_interview.fit.JobFitSourceSnapshot
+import dev.jiaming.ai_interview.fit.JobFitSourceType
 import dev.jiaming.ai_interview.resume.SectionAwareTextChunker
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.kotlin.any
@@ -51,6 +56,23 @@ class RagIndexingServiceTests {
             .containsEntry("contextId", "resume:experience:0")
         assertThat(stored.id).isNotBlank()
         assertThat(stored.text).isEqualTo("Section: Experience\nBuilt an API")
+    }
+
+    @Test
+    fun experienceTextIsChunkedLocallyAndClaimedUnderItsOwnSourceKind() {
+        Mockito.`when`(vectorStoreProvider.ifAvailable).thenReturn(vectorStore)
+        Mockito.`when`(repository.insertClaim(any(), any(), eq(NOW))).thenReturn(true)
+        Mockito.`when`(repository.markReady(any(), eq(1L), any(), eq(NOW))).thenReturn(true)
+
+        service().ensureIndexed(ResolvedDocument(DocumentSourceType.EXPERIENCE, UUID.randomUUID(), "experience-hash", "Cluster migration\nDeployed Kubernetes.", null))
+
+        Mockito.verify(repository).insertClaim(any(), eq(identity().copy(sourceType = DocumentSourceType.EXPERIENCE, contentHash = "experience-hash")), eq(NOW))
+        val documents = listCaptor()
+        Mockito.verify(vectorStore).add(documents.capture())
+        assertThat(documents.value).isNotEmpty().allSatisfy {
+            assertThat(it.metadata).containsEntry("sourceType", "experience")
+            assertThat(it.metadata["contextId"].toString()).startsWith("experience:")
+        }
     }
 
     @Test
@@ -125,6 +147,40 @@ class RagIndexingServiceTests {
         assertThat(service.ensureIndexed(document())).contains(first)
         Mockito.verify(vectorStore, Mockito.times(1)).add(any())
         Mockito.verify(repository).touchReady(first.indexId, first.claimVersion, NOW)
+    }
+
+    @Test
+    fun wrappedIndexingInterruptStopsJobFitRetrievalAfterClaimCleanup() {
+        Mockito.`when`(vectorStoreProvider.ifAvailable).thenReturn(vectorStore)
+        Mockito.`when`(repository.insertClaim(any(), any(), eq(NOW))).thenReturn(true)
+        val failure = IllegalStateException("embedding interrupted", InterruptedException())
+        Mockito.doThrow(failure).`when`(vectorStore).add(any())
+        val source = JobFitFrozenSource(JobFitSourceType.EXPERIENCE, UUID.randomUUID(), "Cluster", "Deployed Kubernetes.")
+        val retriever = JobFitEvidenceRetriever(SectionAwareTextChunker(), service(), retrievalService,
+            RagProperties(1_024, "gemini-embedding-001", "section-block-v3"))
+
+        try {
+            assertThatThrownBy { retriever.retrieve(JobFitSourceSnapshot("snapshot", NOW, listOf(source)), listOf("Kubernetes")) }
+                .isSameAs(failure)
+            assertThat(Thread.currentThread().isInterrupted).isTrue()
+            Mockito.verify(repository).markFailed(any(), eq(1L), eq("VECTOR_INDEX_FAILED"), eq(NOW))
+            Mockito.verify(retrievalService).deleteIndexClaim(any(), eq(1L))
+            Mockito.verify(retrievalService, Mockito.never()).retrieve(any<String>(), any<List<RagDocumentIndexHandle>>(), any<Int>())
+        } finally {
+            Thread.interrupted()
+        }
+    }
+
+    @Test
+    fun ordinaryIndexingFailureStillAllowsLocalFallback() {
+        Mockito.`when`(vectorStoreProvider.ifAvailable).thenReturn(vectorStore)
+        Mockito.`when`(repository.insertClaim(any(), any(), eq(NOW))).thenReturn(true)
+        Mockito.doThrow(IllegalStateException("vectors unavailable")).`when`(vectorStore).add(any())
+
+        assertThat(service().ensureIndexed(document())).isEmpty()
+        assertThat(Thread.currentThread().isInterrupted).isFalse()
+        Mockito.verify(repository).markFailed(any(), eq(1L), eq("VECTOR_INDEX_FAILED"), eq(NOW))
+        Mockito.verify(retrievalService).deleteIndexClaim(any(), eq(1L))
     }
 
     @Test
