@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
@@ -170,39 +171,46 @@ class JobFitIntegrationTests {
         val targetJobId = insertTargetJob()
         jdbc.update("UPDATE ai_interview_app.resumes SET name = 'Gen 0' WHERE id = ?", resumeId)
         repeat(EXPERIENCES_PER_GENERATION) { insertExperience(userId, "Gen 0 project $it") }
-        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
-        val executor = Executors.newSingleThreadExecutor()
-        // Each transaction renames the resume and every experience to the next generation, deletes one experience and adds one.
-        val writer = executor.submit(Callable {
-            var generation = 0
-            while (!stop.get()) {
-                generation++
-                val next = generation
-                transactions.execute {
-                    jdbc.update("UPDATE ai_interview_app.resumes SET name = ? WHERE id = ?", "Gen $next", resumeId)
-                    jdbc.update(
-                        "DELETE FROM ai_interview_app.experiences WHERE id = (SELECT id FROM ai_interview_app.experiences WHERE user_id = ? ORDER BY created_at, id LIMIT 1)",
-                        userId,
-                    )
-                    insertExperience(userId, "Gen $next project new")
-                    jdbc.update("UPDATE ai_interview_app.experiences SET title = regexp_replace(title, '^Gen [0-9]+', ?) WHERE user_id = ?", "Gen $next", userId)
+        val writer = Executors.newSingleThreadExecutor()
+        var generation = 0
+        // After the capture reads the resume and before it reads experiences, commit one writer transaction on another thread
+        // (on this thread it would join the capture's transaction): rename everything to the next generation, delete one experience, add one.
+        val midCaptureWriter = object : JdbcTemplate(jdbc.dataSource!!) {
+            override fun <T> query(sql: String, rowMapper: RowMapper<T>, vararg args: Any?): List<T> {
+                if ("FROM ai_interview_app.experiences" in sql) {
+                    val next = generation + 1
+                    writer.submit(Callable {
+                        transactions.execute {
+                            jdbc.update("UPDATE ai_interview_app.resumes SET name = ? WHERE id = ?", "Gen $next", resumeId)
+                            jdbc.update(
+                                "DELETE FROM ai_interview_app.experiences WHERE id = (SELECT id FROM ai_interview_app.experiences WHERE user_id = ? ORDER BY created_at, id LIMIT 1)",
+                                userId,
+                            )
+                            insertExperience(userId, "Gen $next project new")
+                            jdbc.update("UPDATE ai_interview_app.experiences SET title = regexp_replace(title, '^Gen [0-9]+', ?) WHERE user_id = ?", "Gen $next", userId)
+                        }
+                    }).get(10, TimeUnit.SECONDS)
+                    generation = next
                 }
+                return super.query(sql, rowMapper, *args)
             }
-            generation
-        })
+        }
+        val racingSnapshots = JobFitSourceSnapshotService(midCaptureWriter, transactions.transactionManager!!)
         try {
-            repeat(200) {
-                val snapshot = snapshots.capture(userId, resumeId, targetJobId)
+            repeat(3) { capture ->
+                val snapshot = racingSnapshots.capture(userId, resumeId, targetJobId)
+
+                assertThat(generation).describedAs("writer commits during capture").isEqualTo(capture + 1)
+                assertThat(jdbc.queryForObject("SELECT name FROM ai_interview_app.resumes WHERE id = ?", String::class.java, resumeId)).isEqualTo("Gen $generation")
+                assertThat(jdbc.queryForList("SELECT title FROM ai_interview_app.experiences WHERE user_id = ?", String::class.java, userId))
+                    .hasSize(EXPERIENCES_PER_GENERATION).allMatch { it!!.startsWith("Gen $generation ") }
                 val generations = snapshot.sources.filter { it.sourceType != JobFitSourceType.TARGET_JOB }
                     .map { it.sourceLabel.substringBefore(" project") }.distinct()
                 assertThat(generations).describedAs("source generations in one snapshot").hasSize(1)
                 assertThat(snapshot.sources.count { it.sourceType == JobFitSourceType.EXPERIENCE }).isEqualTo(EXPERIENCES_PER_GENERATION)
             }
         } finally {
-            stop.set(true)
-            val generations = writer.get(10, TimeUnit.SECONDS)
-            executor.shutdownNow()
-            assertThat(generations).describedAs("writer generations during capture").isGreaterThan(1)
+            writer.shutdownNow()
         }
     }
 
@@ -236,6 +244,8 @@ class JobFitIntegrationTests {
         run()
         jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = '' WHERE id = ?", resumeId)
         assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM ai_interview_app.resumes WHERE id = ?", String::class.java, resumeId)).isEqualTo("READY")
+        assertThat(snapshots.currentManifest(local.localUserId(), resumeId, targetJobId).map { it.sourceType }).doesNotContain(JobFitSourceType.RESUME)
     }
 
     private fun finishRun(resumeId: UUID, targetJobId: UUID, result: JobFitResult): UUID {

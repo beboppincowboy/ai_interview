@@ -81,7 +81,8 @@ class JobFitSourceSnapshotService(
         RowMapper { rs, _ ->
             ResumeRow(
                 JobFitFrozenSource(JobFitSourceType.RESUME, resumeId, rs.getString("name"), rs.getString("normalized_text").orEmpty()),
-                // Same readiness as ResumePersistenceService.findReadyDocument: READY with non-blank text.
+                // Mirrors ResumePersistenceService.findReadyDocument (READY, non-blank text); isBlank trims all whitespace, btrim only
+                // spaces, which agree because ResumeTextNormalizer stores trimmed text.
                 rs.getString("processing_status") == "READY" && !rs.getString("normalized_text").isNullOrBlank(),
             )
         }, resumeId, userId,
