@@ -680,7 +680,8 @@ These are the only job types. A `SUCCEEDED` job ends at stage `COMPLETED`; a `FA
 }
 ```
 
-Legacy results retain the shape above. Agentic results also carry `agenticMetadata` with schema version `1`:
+Legacy results retain the shape and decoding behavior above. Agentic results also carry `agenticMetadata` with
+schema version `1`, and their `fitScore` must be an integer from 0 through 100:
 
 ```json
 {
@@ -745,10 +746,12 @@ missing-evidence description when it is not fully supported.
 
 `status` is `SUPPORTED`, `PARTIALLY_SUPPORTED`, or `NOT_ESTABLISHED`; conflicts are separate records containing
 references to at least two candidate source records. An assessment with a conflict cannot be fully supported.
+An assessment citing any member of a declared conflict must link that conflict and cite both sides.
 `judgments` record `JUDGED` or `UNCHECKED` state, status, candidate evidence IDs, missing evidence, and separate
 provider/model/rubric provenance. Optional `providerProbabilities` are finite values from 0 to 1 and do not replace
-the evidence status. Each judgment uses the same candidate evidence IDs as its assessment, and a judged record's
-status matches the canonical assessment. An `UNCHECKED` judgment can only accompany `NOT_ESTABLISHED`.
+the evidence status. Each judgment uses the same set of candidate evidence IDs as its assessment; their order may
+differ. Assessment order controls the legacy quote projection. A judged record's status matches the canonical
+assessment. An `UNCHECKED` judgment can only accompany `NOT_ESTABLISHED`.
 
 `fallbackUsed` and `fallbackReason` disclose generator-judgment fallback use (R13). `trace` is a compact user-facing
 decision summary; it does not contain private model reasoning or raw operational logs. The legacy

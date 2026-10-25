@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { apiRequest } from "@/lib/api/client";
-import type { ExperienceCreated, FitView, JobAccepted, JobStatusResponse, ResumeCreated, ResumeDetail, ResumeExtractionResult, TargetJobCreated } from "@/lib/api/types";
+import type { ExperienceCreated, JobAccepted, JobStatusResponse, ResumeCreated, ResumeDetail, ResumeExtractionResult, TargetJobCreated } from "@/lib/api/types";
 import { createMockServer } from "@/mocks/server";
 import { createMockStore, type MockStoreOptions } from "@/mocks/store";
 import { errorOf, get, pollJobs, post, registerApiScenarios } from "./apiScenarios";
@@ -30,14 +30,6 @@ describe("mock API", () => {
   registerApiScenarios({ base: "", settle: async () => finishJobs() });
 
   // The rest need mock-only controls (store uploads, forced failures, the clock, storage) or an empty database.
-
-  it("returns UNKNOWN freshness for a legacy fit view", async () => {
-    const resume = await pasteResume();
-    const job = await targetJob();
-    const view = await get<FitView>(`/api/resumes/${resume.id}/target-jobs/${job.id}/fit`);
-
-    expect(view).toMatchObject({ result: null, freshness: "UNKNOWN" });
-  });
 
   // Upload rules are tested on the store: jsdom's File loses its name inside the fetch FormData, so multipart
   // parsing in the handler is covered by the browser smoke run instead.

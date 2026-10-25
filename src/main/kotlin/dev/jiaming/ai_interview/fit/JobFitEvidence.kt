@@ -249,7 +249,7 @@ data class JobFitEvidenceMetadata(
                 }
             }
             conflicts.forEach { conflict ->
-                require(!conflict.evidenceIds.all(assessment.evidenceIds::contains) || conflict.id in assessment.conflictIds) {
+                require(!conflict.evidenceIds.any(assessment.evidenceIds::contains) || conflict.id in assessment.conflictIds) {
                     "Assessment must reference every declared conflict whose evidence it cites"
                 }
             }
@@ -267,7 +267,7 @@ data class JobFitEvidenceMetadata(
         assessments.forEach { assessment ->
             val judgment = judgmentByRequirement[assessment.requirementId]
                 ?: throw IllegalArgumentException("Assessment is missing its requirement judgment")
-            require(assessment.evidenceIds == judgment.evidenceIds) {
+            require(assessment.evidenceIds.toSet() == judgment.evidenceIds.toSet()) {
                 "Assessment and judgment must reference the same candidate evidence"
             }
             if (judgment.state == JobFitJudgmentState.UNCHECKED) {

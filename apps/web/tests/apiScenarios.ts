@@ -6,7 +6,7 @@ import { afterAll, expect, it } from "vitest";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import committedShapes from "./apiShapes.json";
 import type {
-  Attempt, DeleteImpact, History, JobAccepted, JobStatusResponse, PracticeSet, PracticeSetCreated, Resume, ResumeCreated,
+  Attempt, DeleteImpact, FitView, History, JobAccepted, JobStatusResponse, PracticeSet, PracticeSetCreated, Resume, ResumeCreated,
   SuggestionsView, TargetJobCreated, VoiceSession, VoiceSaveResult, VoiceTranscript
 } from "@/lib/api/types";
 
@@ -227,6 +227,14 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     expect(again).toMatchObject({ duplicate: true, targetJob: { id: saved.id, name: saved.name } });
   });
 
+  scenario("reports unknown freshness before a fit has run", async () => {
+    const resume = await paste("Backend");
+    const job = await targetJob();
+    const view = record("GET /api/resumes/{id}/target-jobs/{id}/fit (unrun)",
+      await get<FitView>(`${base}/api/resumes/${resume.id}/target-jobs/${job.id}/fit`));
+    expect(view).toMatchObject({ result: null, createdAt: null, freshness: "UNKNOWN" });
+  });
+
   scenario("previews and cascades a resume delete", async () => {
     const resume = await paste("Backend");
     // Evidence the selected resume lacks, so a real model has a strong match and returns suggestion items.
@@ -245,6 +253,11 @@ export function registerApiScenarios({ base, settle }: ApiTarget) {
     await settle([...recordedJobIds, otherSuggestions.jobId]);
     // The second suggestions job is read too, so suggestion items get two chances to arrive non-empty.
     for (const jobId of [...recordedJobIds, otherSuggestions.jobId]) await readJob(jobId);
+
+    const fitView = record("GET /api/resumes/{id}/target-jobs/{id}/fit (ready)",
+      await get<FitView>(`${pair(resume.id)}/fit`));
+    expect(fitView.result).not.toBeNull();
+    expect(fitView.freshness).toBe("UNKNOWN");
 
     const ready = record("GET /api/practice-sets/{id} (ready)", await readSet(set.id));
     const attempt = record("POST /api/practice-sets/{id}/questions/{id}/attempts",

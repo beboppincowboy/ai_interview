@@ -60,6 +60,136 @@ class JobFitResultTests {
     }
 
     @Test
+    fun `one-sided supported citation cannot omit its declared conflict link`() {
+        val metadata = requireNotNull(objectMapper.readValue(AGENTIC_RESULT_JSON, JobFitResult::class.java).agenticMetadata)
+        val assessments = metadata.assessments.map {
+            if (it.requirementId == "req-kafka") it.copy(
+                status = JobFitEvidenceStatus.SUPPORTED,
+                evidenceIds = listOf("experience-kafka-a"),
+                conflictIds = emptyList(),
+                missingEvidenceDescription = null,
+            ) else it
+        }
+        val judgments = metadata.judgments.map {
+            if (it.requirementId == "req-kafka") it.copy(
+                status = JobFitEvidenceStatus.SUPPORTED,
+                evidenceIds = listOf("experience-kafka-a"),
+                missingEvidence = emptyList(),
+            ) else it
+        }
+
+        val thrown = catchThrowable { metadata.copy(assessments = assessments, judgments = judgments) }
+
+        assertThat(thrown).isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("declared conflict")
+    }
+
+    @Test
+    fun `one-sided partial citation cannot omit its declared conflict link`() {
+        val metadata = requireNotNull(objectMapper.readValue(AGENTIC_RESULT_JSON, JobFitResult::class.java).agenticMetadata)
+        val assessments = metadata.assessments.map {
+            if (it.requirementId == "req-kafka") it.copy(
+                evidenceIds = listOf("experience-kafka-a"),
+                conflictIds = emptyList(),
+            ) else it
+        }
+        val judgments = metadata.judgments.map {
+            if (it.requirementId == "req-kafka") it.copy(evidenceIds = listOf("experience-kafka-a")) else it
+        }
+
+        val thrown = catchThrowable { metadata.copy(assessments = assessments, judgments = judgments) }
+
+        assertThat(thrown).isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("declared conflict")
+    }
+
+    @Test
+    fun `a linked conflict still requires both candidate citations`() {
+        val metadata = requireNotNull(objectMapper.readValue(AGENTIC_RESULT_JSON, JobFitResult::class.java).agenticMetadata)
+        val assessments = metadata.assessments.map {
+            if (it.requirementId == "req-kafka") it.copy(evidenceIds = listOf("experience-kafka-a")) else it
+        }
+        val judgments = metadata.judgments.map {
+            if (it.requirementId == "req-kafka") it.copy(evidenceIds = listOf("experience-kafka-a")) else it
+        }
+
+        val thrown = catchThrowable { metadata.copy(assessments = assessments, judgments = judgments) }
+
+        assertThat(thrown).isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("cite both sides")
+    }
+
+    @Test
+    fun `judgment evidence order is irrelevant while assessment order drives the legacy quote`() {
+        val metadata = requireNotNull(objectMapper.readValue(AGENTIC_RESULT_JSON, JobFitResult::class.java).agenticMetadata)
+        val secondKotlinEvidence = JobFitEvidenceItem(
+            id = "resume-kotlin-second",
+            snapshotId = metadata.snapshotId,
+            sourceType = JobFitSourceType.RESUME,
+            resourceId = UUID.fromString(RESUME_ID),
+            contentHash = "resume-hash",
+            sourceLabel = "Resume",
+            passage = "Led another Kotlin service.",
+            quote = "Led another Kotlin service.",
+        )
+        val assessments = metadata.assessments.map {
+            if (it.requirementId == "req-kotlin") {
+                it.copy(evidenceIds = listOf("resume-kotlin", "resume-kotlin-second"))
+            } else it
+        }
+        val judgments = metadata.judgments.map {
+            if (it.requirementId == "req-kotlin") {
+                it.copy(evidenceIds = listOf("resume-kotlin-second", "resume-kotlin"))
+            } else it
+        }
+
+        val reordered = metadata.copy(
+            assessments = assessments,
+            evidenceCatalog = metadata.evidenceCatalog + secondKotlinEvidence,
+            judgments = judgments,
+        )
+
+        assertThat(reordered.legacyMatchedRequirements()).containsExactly(
+            MatchedRequirement("Kotlin", "Built Kotlin services in production. Led another Kotlin service."),
+        )
+        assertThat(reordered.legacyMissingRequirements()).containsExactlyElementsOf(metadata.legacyMissingRequirements())
+    }
+
+    @Test
+    fun `judgment evidence with a different set from its assessment is rejected`() {
+        val metadata = requireNotNull(objectMapper.readValue(AGENTIC_RESULT_JSON, JobFitResult::class.java).agenticMetadata)
+        val judgments = metadata.judgments.map {
+            if (it.requirementId == "req-kafka") it.copy(evidenceIds = listOf("experience-kafka-a")) else it
+        }
+
+        val thrown = catchThrowable { metadata.copy(judgments = judgments) }
+
+        assertThat(thrown).isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("same candidate evidence")
+    }
+
+    @Test
+    fun `agentic fit score must stay within zero and one hundred`() {
+        val result = objectMapper.readValue(AGENTIC_RESULT_JSON, JobFitResult::class.java)
+
+        for (score in listOf(-1, 101)) {
+            val thrown = catchThrowable { result.copy(fitScore = score) }
+            assertThat(thrown).isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("Agentic fit score")
+        }
+        for (score in listOf(0, 100)) {
+            assertThat(result.copy(fitScore = score).fitScore).isEqualTo(score)
+        }
+    }
+
+    @Test
+    fun `legacy saved results keep their historical fit score decoding`() {
+        val historical = LEGACY_RESULT_JSON.replaceFirst("\"fitScore\": 68", "\"fitScore\": 101")
+
+        assertThat(objectMapper.readValue(historical, JobFitResult::class.java).fitScore).isEqualTo(101)
+    }
+
+    @Test
     fun `evidence must match its frozen manifest identity hash and label`() {
         for ((field, value) in mapOf(
             "sourceType" to "EXPERIENCE",

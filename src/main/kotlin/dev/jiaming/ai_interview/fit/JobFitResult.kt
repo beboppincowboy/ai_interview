@@ -15,6 +15,7 @@ data class JobFitResult(
 ) {
     init {
         agenticMetadata?.let { metadata ->
+            require(fitScore in 0..100) { "Agentic fit score must be between 0 and 100" }
             require(matchedRequirements == metadata.legacyMatchedRequirements()) {
                 "Legacy matched requirements must be derived from Supported assessments"
             }
