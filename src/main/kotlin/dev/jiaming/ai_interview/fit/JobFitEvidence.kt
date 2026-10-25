@@ -16,13 +16,14 @@ enum class JobFitSourceType {
     EXPERIENCE,
 }
 
-/** Freshness is evaluated separately from job progress; old results have no freshness guarantee. */
+/** CURRENT matches current sources; OUTDATED has changed sources; UNKNOWN has no freshness guarantee, independently of job progress. */
 enum class JobFitFreshness {
     CURRENT,
     OUTDATED,
     UNKNOWN,
 }
 
+/** JUDGED has a status and provenance; UNCHECKED has neither and can only accompany NOT_ESTABLISHED. */
 enum class JobFitJudgmentState {
     JUDGED,
     UNCHECKED,
@@ -35,7 +36,7 @@ enum class JobFitTraceKind {
     VERIFICATION,
 }
 
-/** One source identity in the run's frozen manifest. */
+/** Frozen source identity and non-blank label/hash; hash encoding is unspecified. Invalid inputs throw [IllegalArgumentException]. */
 data class JobFitSourceManifestEntry(
     val sourceType: JobFitSourceType,
     val resourceId: UUID,
@@ -48,7 +49,9 @@ data class JobFitSourceManifestEntry(
     }
 }
 
-/** A quote tied to one immutable passage in the run's snapshot. */
+/** RAW source text: quote is a non-blank exact substring of passage, without semantic verification or HTML escaping.
+ * IDs, hash, label, and passage must be non-blank; invalid inputs throw [IllegalArgumentException].
+ */
 data class JobFitEvidenceItem(
     val id: String,
     val snapshotId: String,
@@ -71,7 +74,10 @@ data class JobFitEvidenceItem(
     }
 }
 
-/** Canonical assessment for one extracted target-job requirement. */
+/** Canonical requirement assessment; targetJobEvidenceIds define the requirement, evidenceIds cite candidate records.
+ * IDs are unique within each list; positive statuses need evidence, and non-SUPPORTED statuses need a gap description.
+ * SUPPORTED forbids conflicts and non-blank gaps; invalid inputs throw [IllegalArgumentException].
+ */
 data class JobFitRequirementAssessment(
     val requirementId: String,
     val requirement: String,
@@ -111,7 +117,9 @@ data class JobFitRequirementAssessment(
     }
 }
 
-/** A contradiction is separate from evidence status and points to both candidate source records. */
+/** A contradiction with non-blank ID/description and at least two distinct evidence IDs; invalid inputs throw [IllegalArgumentException].
+ * [JobFitEvidenceMetadata] additionally requires those IDs to cite at least two candidate source records.
+ */
 data class JobFitEvidenceConflict(
     val id: String,
     val description: String,
@@ -126,7 +134,7 @@ data class JobFitEvidenceConflict(
     }
 }
 
-/** Judge identity and rubric are provenance; provider probabilities are stored separately on [JobFitJudgment]. */
+/** Non-blank provider/model/rubric identity; invalid inputs throw [IllegalArgumentException]. Probabilities belong to [JobFitJudgment]. */
 data class JobFitJudgmentProvenance(
     val provider: String,
     val model: String,
@@ -139,7 +147,10 @@ data class JobFitJudgmentProvenance(
     }
 }
 
-/** A typed judgment record. An unchecked record has no status or judge provenance. */
+/** JUDGED requires status/provenance; positive statuses require candidate evidence. UNCHECKED forbids status, provenance, evidence, and probabilities.
+ * Evidence IDs are unique; supplied probabilities are finite 0..1 values, not necessarily normalized or aligned with status.
+ * Invalid inputs throw [IllegalArgumentException]; [JobFitEvidenceMetadata] binds this judgment to its assessment.
+ */
 data class JobFitJudgment(
     val requirementId: String,
     val state: JobFitJudgmentState,
@@ -172,7 +183,9 @@ data class JobFitJudgment(
     }
 }
 
-/** Compact user-facing decision summary; this record must never contain private model reasoning. */
+/** Compact user-facing summary; callers must exclude private model reasoning. No content filtering or HTML escaping occurs.
+ * Summary must be non-blank; round is nullable and non-negative. Invalid inputs throw [IllegalArgumentException].
+ */
 data class JobFitTraceEvent(
     val kind: JobFitTraceKind,
     val summary: String,
@@ -184,7 +197,12 @@ data class JobFitTraceEvent(
     }
 }
 
-/** Versioned, additive evidence contract carried alongside the long-lived legacy Job Fit fields. */
+/** Validates one source snapshot: exactly one resume/target job, unique identities, and catalog references matching snapshot/source/hash/label.
+ * Each assessment requires one judgment with the same candidate evidence set; JUDGED status matches, UNCHECKED requires NOT_ESTABLISHED.
+ * Citing any conflict member requires linking that conflict and citing all its evidence IDs.
+ * Only schema version 1 is accepted; fallbackReason is non-blank iff fallbackUsed, otherwise null.
+ * Invalid inputs throw [IllegalArgumentException]. RAW source text is retained; structural validation does not establish semantic support.
+ */
 data class JobFitEvidenceMetadata(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     val snapshotId: String,
@@ -286,7 +304,7 @@ data class JobFitEvidenceMetadata(
         }
     }
 
-    /** Projects canonical Supported assessments to the legacy list for clients that still read it. */
+    /** Pure projection of SUPPORTED assessments in input order; joins RAW quotes with spaces in each assessment's evidenceIds order. */
     fun legacyMatchedRequirements(): List<MatchedRequirement> {
         val evidenceById = evidenceCatalog.associateBy(JobFitEvidenceItem::id)
         return assessments.filter { it.status == JobFitEvidenceStatus.SUPPORTED }.map { assessment ->
@@ -294,7 +312,7 @@ data class JobFitEvidenceMetadata(
         }
     }
 
-    /** Projects every non-Supported assessment to the legacy missing list. */
+    /** Pure projection of non-SUPPORTED assessments in input order; guidance is the required missingEvidenceDescription. */
     fun legacyMissingRequirements(): List<MissingRequirement> = assessments
         .filter { it.status != JobFitEvidenceStatus.SUPPORTED }
         .map { MissingRequirement(it.requirement, requireNotNull(it.missingEvidenceDescription)) }

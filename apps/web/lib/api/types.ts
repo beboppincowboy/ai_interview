@@ -181,7 +181,7 @@ export type ExperienceBatchResult = {
 };
 
 // §6 Fit and suggestions
-/** Fit result state for a resume/target-job pair; result and saved time are absent before a result exists. */
+/** Saved fit for a resume/target-job pair; result and createdAt (UTC) are null before a result exists. */
 export type FitView = {
   resumeId: string;
   targetJobId: string;
@@ -189,7 +189,7 @@ export type FitView = {
   createdAt: string | null;
   /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
   latestJob: LatestJob | null;
-  /** CURRENT, OUTDATED, or UNKNOWN independently of whether a newer Job Fit job is running. */
+  /** Current server emits UNKNOWN; omitted on older servers also means unknown. Source-change evaluation is not implemented yet. */
   freshness?: JobFitFreshness;
 };
 
@@ -298,7 +298,7 @@ export type ResumeScoreResult = {
   scoredAt: string;
 };
 
-/** Job-fit result with 0–100 score, requirement evidence/guidance, and prioritized feedback. */
+/** Job-fit evidence/guidance and feedback; agentic scores are validated as 0–100, legacy decoding preserves historical values. */
 export type JobFitResult = {
   fitScore: number;
   summary: string;
@@ -309,12 +309,15 @@ export type JobFitResult = {
   agenticMetadata?: JobFitEvidenceMetadata | null;
 };
 
+/** Strength of recorded support; NOT_ESTABLISHED describes a documentation gap, not lack of candidate ability. */
 export type JobFitEvidenceStatus = "SUPPORTED" | "PARTIALLY_SUPPORTED" | "NOT_ESTABLISHED";
+/** CURRENT matches current sources; OUTDATED has changed sources; UNKNOWN offers no freshness guarantee. */
 export type JobFitFreshness = "CURRENT" | "OUTDATED" | "UNKNOWN";
 export type JobFitSourceType = "RESUME" | "TARGET_JOB" | "EXPERIENCE";
 export type JobFitJudgmentState = "JUDGED" | "UNCHECKED";
 export type JobFitTraceKind = "RETRIEVAL" | "JUDGMENT" | "FALLBACK" | "VERIFICATION";
 
+/** Frozen source identity (resourceId is a UUID); contentHash is non-blank with no prescribed encoding. */
 export type JobFitSourceManifestEntry = {
   sourceType: JobFitSourceType;
   resourceId: string;
@@ -322,6 +325,9 @@ export type JobFitSourceManifestEntry = {
   contentHash: string;
 };
 
+/** RAW source text, not HTML-escaped; quote is an exact substring of passage, not a semantic support guarantee.
+ * id is snapshot-local; snapshotId matches metadata, and source identity/hash/label match its manifest.
+ */
 export type JobFitEvidenceItem = {
   id: string;
   snapshotId: string;
@@ -333,6 +339,9 @@ export type JobFitEvidenceItem = {
   quote: string;
 };
 
+/** Catalog references: targetJobEvidenceIds define the requirement; evidenceIds cite resume/experience support.
+ * Positive statuses require evidence; non-SUPPORTED statuses require a gap. Citing any conflict member requires all its evidence IDs and its conflictId.
+ */
 export type JobFitRequirementAssessment = {
   requirementId: string;
   requirement: string;
@@ -343,10 +352,16 @@ export type JobFitRequirementAssessment = {
   missingEvidenceDescription: string | null;
 };
 
+/** Catalog references to at least two distinct candidate source records; an associated assessment cannot be SUPPORTED. */
 export type JobFitEvidenceConflict = { id: string; description: string; evidenceIds: string[] };
 
+/** Non-blank provider/model/rubric identity, independent of confidence and evidence status. */
 export type JobFitJudgmentProvenance = { provider: string; model: string; rubricVersion: string };
 
+/** One judgment per assessment; JUDGED has status/provenance and the same candidate evidence set (order may differ).
+ * UNCHECKED has null status/provenance, empty evidence/probabilities, and accompanies NOT_ESTABLISHED.
+ * Probabilities are optional per status, finite 0..1 values; they need not sum to one or determine status.
+ */
 export type JobFitJudgment = {
   requirementId: string;
   state: JobFitJudgmentState;
@@ -357,9 +372,13 @@ export type JobFitJudgment = {
   providerProbabilities: Partial<Record<JobFitEvidenceStatus, number>>;
 };
 
-/** Compact decision summary for inspection; it never contains private model reasoning. */
+/** User-facing summary excluding private reasoning by caller policy; no HTML escaping. round is null or a non-negative integer. */
 export type JobFitTraceEvent = { kind: JobFitTraceKind; summary: string; round: number | null };
 
+/** Version 1 server-validated source snapshot; TypeScript declarations perform no runtime validation.
+ * Includes exactly one resume/target job; catalog IDs are unique, while citations may be reused across assessments (see API contract §8.2).
+ * fallbackReason is non-blank iff fallbackUsed, otherwise null; source evidence retains RAW customer text.
+ */
 export type JobFitEvidenceMetadata = {
   schemaVersion: 1;
   snapshotId: string;

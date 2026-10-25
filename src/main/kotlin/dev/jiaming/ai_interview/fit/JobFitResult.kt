@@ -3,7 +3,10 @@ package dev.jiaming.ai_interview.fit
 import dev.jiaming.ai_interview.coach.Priority
 import com.fasterxml.jackson.annotation.JsonInclude as Jackson2JsonInclude
 
-/** Target-job fit output with a score, summary, evidence, gaps, and prioritized feedback. */
+/** Target-job fit output; null agenticMetadata means a legacy result and is omitted from JSON.
+ * Agentic results require a 0..100 score and exact legacy projections; violations throw [IllegalArgumentException].
+ * Legacy scores retain historical parsing behavior; evidence may contain RAW candidate text.
+ */
 data class JobFitResult(
     val fitScore: Int,
     val summary: String,
@@ -26,7 +29,7 @@ data class JobFitResult(
     }
 
     companion object {
-        /** Builds the compatibility lists from canonical assessments for an agentic result. */
+        /** Pure factory deriving compatibility lists from metadata; throws [IllegalArgumentException] for scores outside 0..100. */
         fun fromAgentic(
             fitScore: Int,
             summary: String,

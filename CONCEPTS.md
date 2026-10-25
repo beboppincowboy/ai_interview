@@ -91,6 +91,16 @@ It is not an Idempotency key, which replays a request response, or a Duplicate s
 
 ## AI
 
+### Source snapshot
+The fixed set of candidate records and target-job text used for one assessment, including their contents at the time they were captured.
+
+An assessment becomes outdated when those records change or the candidate adds or removes a relevant record. Its source snapshot still describes the evidence used for the saved assessment.
+
+### Evidence status
+How strongly the candidate's recorded evidence supports a particular target-job requirement: Supported, Partially supported, or Not established.
+
+Not established means the available records do not establish the requirement; it does not mean the candidate lacks the experience.
+
 ### RAG snippet
 One retrieved passage of resume or target job text, with its source and score, that is put into an AI prompt as context.
 *Avoid:* chunk (for retrieved context), excerpt

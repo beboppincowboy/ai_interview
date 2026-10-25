@@ -417,8 +417,8 @@ the page can render "not run yet". Either ID missing returns `404 RESUME_NOT_FOU
 ```
 
 When a fit has succeeded, `result` is a `JobFitResult` (section 8.2). `freshness` is `CURRENT`, `OUTDATED`, or
-`UNKNOWN`, computed independently of whether a newer Job Fit job is running. Historical results without agentic
-metadata have `UNKNOWN` freshness.
+`UNKNOWN`, independently of whether a newer Job Fit job is running. The current service always returns `UNKNOWN`;
+source-change evaluation is not implemented yet. Historical results without agentic metadata have no freshness guarantee.
 
 **`SuggestionsView`**:
 
@@ -736,7 +736,9 @@ schema version `1`, and their `fitScore` must be an integer from 0 through 100:
 }
 ```
 
-`sourceManifest` freezes source type, resource ID, immutable label, and content hash for the run. `evidenceCatalog`
+`sourceManifest` freezes source type, resource ID, immutable label, and content hash for the run. It contains exactly
+one `RESUME` and one `TARGET_JOB`, with unique `(sourceType, resourceId)` identities. Hash encoding is unspecified;
+the `sha256:…` values above are illustrative. `evidenceCatalog`
 `id` values are run-local opaque references; each item must name the same `snapshotId`, match a manifest entry, and
 hold a quote that is an exact substring of its frozen `passage`. Assessment `targetJobEvidenceIds` must refer to
 `TARGET_JOB` items; candidate `evidenceIds` must refer only to `RESUME` or `EXPERIENCE` items. Unknown IDs and
@@ -746,14 +748,15 @@ missing-evidence description when it is not fully supported.
 
 `status` is `SUPPORTED`, `PARTIALLY_SUPPORTED`, or `NOT_ESTABLISHED`; conflicts are separate records containing
 references to at least two candidate source records. An assessment with a conflict cannot be fully supported.
-An assessment citing any member of a declared conflict must link that conflict and cite both sides.
+An assessment citing any member of a declared conflict must link that conflict and cite all its evidence IDs.
 `judgments` record `JUDGED` or `UNCHECKED` state, status, candidate evidence IDs, missing evidence, and separate
 provider/model/rubric provenance. Optional `providerProbabilities` are finite values from 0 to 1 and do not replace
 the evidence status. Each judgment uses the same set of candidate evidence IDs as its assessment; their order may
 differ. Assessment order controls the legacy quote projection. A judged record's status matches the canonical
-assessment. An `UNCHECKED` judgment can only accompany `NOT_ESTABLISHED`.
+assessment. Every assessment has exactly one judgment. An `UNCHECKED` judgment can only accompany `NOT_ESTABLISHED`.
 
-`fallbackUsed` and `fallbackReason` disclose generator-judgment fallback use (R13). `trace` is a compact user-facing
+`fallbackUsed` and `fallbackReason` disclose generator-judgment fallback use (R13): the reason is non-blank when used,
+and null otherwise. `trace` is a compact user-facing
 decision summary; it does not contain private model reasoning or raw operational logs. The legacy
 `matchedRequirements` list is derived from `SUPPORTED` assessments using their exact quotes. The legacy
 `missingRequirements` list contains every other assessment and its missing-evidence description. This keeps older
