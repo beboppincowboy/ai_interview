@@ -81,7 +81,8 @@ class JobFitSourceSnapshotService(
         RowMapper { rs, _ ->
             ResumeRow(
                 JobFitFrozenSource(JobFitSourceType.RESUME, resumeId, rs.getString("name"), rs.getString("normalized_text").orEmpty()),
-                rs.getString("processing_status") == "READY" && rs.getString("normalized_text") != null,
+                // Same readiness as ResumePersistenceService.findReadyDocument: READY with non-blank text.
+                rs.getString("processing_status") == "READY" && !rs.getString("normalized_text").isNullOrBlank(),
             )
         }, resumeId, userId,
     ).firstOrNull()

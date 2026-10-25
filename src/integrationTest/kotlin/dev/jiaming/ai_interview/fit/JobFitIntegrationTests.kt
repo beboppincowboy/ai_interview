@@ -155,9 +155,55 @@ class JobFitIntegrationTests {
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("TARGET_JOB_NOT_FOUND") }
         assertThatThrownBy { snapshots.capture(UUID.randomUUID(), resumeId, targetJobId) }
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_FOUND") }
-        jdbc.update("UPDATE ai_interview_app.resumes SET processing_status = 'PENDING' WHERE id = ?", resumeId)
+        jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = '  ' WHERE id = ?", resumeId)
         assertThatThrownBy { snapshots.capture(userId, resumeId, targetJobId) }
             .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_READY") }
+        jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = 'Built Kotlin services.', processing_status = 'PENDING' WHERE id = ?", resumeId)
+        assertThatThrownBy { snapshots.capture(userId, resumeId, targetJobId) }
+            .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_READY") }
+    }
+
+    @Test
+    fun concurrentSourceEditsNeverProduceAMixedSnapshot() {
+        val userId = local.localUserId()
+        val resumeId = insertResume()
+        val targetJobId = insertTargetJob()
+        jdbc.update("UPDATE ai_interview_app.resumes SET name = 'Gen 0' WHERE id = ?", resumeId)
+        repeat(EXPERIENCES_PER_GENERATION) { insertExperience(userId, "Gen 0 project $it") }
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        val executor = Executors.newSingleThreadExecutor()
+        // Each transaction renames the resume and every experience to the next generation, deletes one experience and adds one.
+        val writer = executor.submit(Callable {
+            var generation = 0
+            while (!stop.get()) {
+                generation++
+                val next = generation
+                transactions.execute {
+                    jdbc.update("UPDATE ai_interview_app.resumes SET name = ? WHERE id = ?", "Gen $next", resumeId)
+                    jdbc.update(
+                        "DELETE FROM ai_interview_app.experiences WHERE id = (SELECT id FROM ai_interview_app.experiences WHERE user_id = ? ORDER BY created_at, id LIMIT 1)",
+                        userId,
+                    )
+                    insertExperience(userId, "Gen $next project new")
+                    jdbc.update("UPDATE ai_interview_app.experiences SET title = regexp_replace(title, '^Gen [0-9]+', ?) WHERE user_id = ?", "Gen $next", userId)
+                }
+            }
+            generation
+        })
+        try {
+            repeat(200) {
+                val snapshot = snapshots.capture(userId, resumeId, targetJobId)
+                val generations = snapshot.sources.filter { it.sourceType != JobFitSourceType.TARGET_JOB }
+                    .map { it.sourceLabel.substringBefore(" project") }.distinct()
+                assertThat(generations).describedAs("source generations in one snapshot").hasSize(1)
+                assertThat(snapshot.sources.count { it.sourceType == JobFitSourceType.EXPERIENCE }).isEqualTo(EXPERIENCES_PER_GENERATION)
+            }
+        } finally {
+            stop.set(true)
+            val generations = writer.get(10, TimeUnit.SECONDS)
+            executor.shutdownNow()
+            assertThat(generations).describedAs("writer generations during capture").isGreaterThan(1)
+        }
     }
 
     @Test
@@ -185,6 +231,10 @@ class JobFitIntegrationTests {
 
         run()
         jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = 'Built Go services.' WHERE id = ?", resumeId)
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
+
+        run()
+        jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = '' WHERE id = ?", resumeId)
         assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
     }
 
@@ -256,6 +306,7 @@ class JobFitIntegrationTests {
     }
 
     companion object {
+        private const val EXPERIENCES_PER_GENERATION = 5
         @Container @JvmField val POSTGRES = PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("ai_interview_job_fit_test").withUsername("ai_interview").withPassword("ai_interview")
         private val mapper: ObjectMapper = JsonMapper.builder().findAndAddModules().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build()
