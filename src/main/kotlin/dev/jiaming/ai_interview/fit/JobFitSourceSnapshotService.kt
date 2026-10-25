@@ -15,7 +15,8 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.TransactionTemplate
 
-/** One prompt-visible source as frozen for a run; [contentHash] is a revision hash of label and text, not the RAG index hash. */
+/** RAW, unescaped prompt-visible source text and display label; construction does not validate ownership or content.
+ * [contentHash] is lowercase SHA-256 hex of UTF-8(label + NUL + text), computed without I/O; it is not the RAG index hash. */
 data class JobFitFrozenSource(
     val sourceType: JobFitSourceType,
     val resourceId: UUID,
@@ -25,19 +26,23 @@ data class JobFitFrozenSource(
     @get:JsonIgnore
     val contentHash: String get() = sha256Hex("$sourceLabel\u0000$text")
 
+    /** Builds the source identity/label/revision entry without text or I/O; invalid manifest fields throw IllegalArgumentException. */
     fun manifestEntry() = JobFitSourceManifestEntry(sourceType, resourceId, sourceLabel, contentHash)
 }
 
-/** Owner-scoped sources frozen at a run's first attempt: one resume, one target job and every experience, sorted by type then ID. */
+/** Frozen source values; [capturedAt] is a UTC instant. Construction does not validate source membership or ordering.
+ * [JobFitSourceSnapshotService.capture] supplies selected resume, selected target job, then all owner experiences ordered by UUID. */
 data class JobFitSourceSnapshot(
     val snapshotId: String,
     val capturedAt: Instant,
     val sources: List<JobFitFrozenSource>,
 ) {
+    /** Builds entries in source order without I/O; propagates manifest-field validation errors. */
     fun manifest(): List<JobFitSourceManifestEntry> = sources.map(JobFitFrozenSource::manifestEntry)
 }
 
-/** UNKNOWN for a legacy result (null [savedManifest]); otherwise CURRENT only when both manifests hold the same entries in any order. */
+/** Pure comparison: null [savedManifest] gives UNKNOWN, equal entry sets give CURRENT, otherwise OUTDATED.
+ * Compares identities, labels and hashes; ignores ordering and duplicate entries and performs no source reads. */
 fun jobFitFreshness(savedManifest: List<JobFitSourceManifestEntry>?, currentManifest: List<JobFitSourceManifestEntry>): JobFitFreshness = when {
     savedManifest == null -> JobFitFreshness.UNKNOWN
     savedManifest.toSet() == currentManifest.toSet() -> JobFitFreshness.CURRENT
@@ -55,12 +60,16 @@ class JobFitSourceSnapshotService(
         isReadOnly = true
     }
 
-    /** Restores the job's checkpointed snapshot, or captures and checkpoints one before any provider call. Capture errors match [capture]. */
+    /** Returns RAW source text from the job checkpoint without rereading live sources, or blocks on capture and checkpoint persistence.
+     * Caller supplies the job's selected document IDs; restored checkpoints are trusted and not rebound to these arguments.
+     * Propagates capture, checkpoint decoding, persistence and lease-loss errors; makes no provider calls. */
     fun frozenSources(context: JobExecutionContext, resumeId: UUID, targetJobId: UUID): JobFitSourceSnapshot =
         context.checkpoint(CHECKPOINT_FIELD, JobFitSourceSnapshot::class.java)
             ?: capture(context.userId(), resumeId, targetJobId).also { context.saveCheckpoint(CHECKPOINT_FIELD, it) }
 
-    /** Throws ApiRequestException RESUME_NOT_FOUND (404), RESUME_NOT_READY (409) or TARGET_JOB_NOT_FOUND (404), as the document resolver does. */
+    /** Reads all owner sources in a read-only repeatable-read transaction; returns RAW text, a new snapshot ID and UTC capture time.
+     * Orders selected resume, selected target job, then experiences by UUID; does not persist the snapshot or call providers.
+     * Throws ApiRequestException RESUME_NOT_FOUND (404), RESUME_NOT_READY (409), TARGET_JOB_NOT_FOUND (404), or propagates database errors. */
     fun capture(userId: UUID, resumeId: UUID, targetJobId: UUID): JobFitSourceSnapshot = requireNotNull(snapshotTransaction.execute {
         val resume = findResume(userId, resumeId) ?: throw ApiRequestException(HttpStatus.NOT_FOUND, "RESUME_NOT_FOUND", "Resume was not found")
         if (!resume.ready) throw ApiRequestException(HttpStatus.CONFLICT, "RESUME_NOT_READY", "Resume is not ready for analysis")
@@ -69,7 +78,8 @@ class JobFitSourceSnapshotService(
         JobFitSourceSnapshot(UUID.randomUUID().toString(), Instant.now(), listOf(resume.source, targetJob) + findExperiences(userId))
     })
 
-    /** Manifest of the owner's sources now; an unready, missing or foreign resume/target job is simply absent, which reads as OUTDATED. */
+    /** Blocks on read-only repeatable-read database reads and builds current identity/label/hash entries without returning source text.
+     * Omits an unready, missing or foreign selected document; includes all owner experiences. Propagates database/manifest validation errors. */
     fun currentManifest(userId: UUID, resumeId: UUID, targetJobId: UUID): List<JobFitSourceManifestEntry> = requireNotNull(snapshotTransaction.execute {
         listOfNotNull(findResume(userId, resumeId)?.takeIf { it.ready }?.source, findTargetJob(userId, targetJobId))
             .plus(findExperiences(userId))

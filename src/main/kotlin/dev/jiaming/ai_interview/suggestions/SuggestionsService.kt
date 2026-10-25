@@ -169,7 +169,9 @@ class SuggestionsService(
     }
 }
 
-/** Prompt-visible experience text from a row with title, organization, start_date, end_date and description columns. */
+/** Formats RAW, unescaped text from the current row's title, organization, start_date, end_date and description columns.
+ * Joins non-null fields with newlines; missing date endpoints use unknown/present, and both absent omit dates.
+ * Does not advance the ResultSet or query the database; propagates column-access errors. */
 fun experiencePromptText(rs: ResultSet): String {
     val start = rs.getString("start_date")
     val end = rs.getString("end_date")
