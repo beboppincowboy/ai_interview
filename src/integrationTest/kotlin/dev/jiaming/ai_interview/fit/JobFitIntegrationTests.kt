@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
@@ -125,6 +126,128 @@ class JobFitIntegrationTests {
         assertThat(count("background_jobs")).isZero()
     }
 
+    @Test
+    fun aSnapshotCapturesEveryOwnedExperienceAndNoForeignOne() {
+        val resumeId = insertResume()
+        val targetJobId = insertTargetJob()
+        val owned = (1..60).map { insertExperience(local.localUserId(), "Project $it", createdDaysAgo = it) }
+        val foreignUser = UUID.randomUUID()
+        jdbc.update("INSERT INTO ai_interview_app.app_users (id, email) VALUES (?, ?)", foreignUser, "$foreignUser@job-fit-test.example")
+        insertExperience(foreignUser, "Foreign project")
+
+        val snapshot = snapshots.capture(local.localUserId(), resumeId, targetJobId)
+
+        assertThat(snapshot.sources.filter { it.sourceType == JobFitSourceType.RESUME }.map { it.resourceId }).containsExactly(resumeId)
+        assertThat(snapshot.sources.filter { it.sourceType == JobFitSourceType.TARGET_JOB }.map { it.resourceId }).containsExactly(targetJobId)
+        assertThat(snapshot.sources.filter { it.sourceType == JobFitSourceType.EXPERIENCE }.map { it.resourceId })
+            .containsExactlyElementsOf(owned.sortedBy(UUID::toString))
+        assertThat(snapshot.sources.first { it.resourceId == owned.last() }.text).contains("Project 60", "Acme", "2021-01 to present")
+    }
+
+    @Test
+    fun aSnapshotKeepsTheResolverErrorsForMissingForeignOrUnreadyDocuments() {
+        val resumeId = insertResume()
+        val targetJobId = insertTargetJob()
+        val userId = local.localUserId()
+
+        assertThatThrownBy { snapshots.capture(userId, UUID.randomUUID(), targetJobId) }
+            .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_FOUND") }
+        assertThatThrownBy { snapshots.capture(userId, resumeId, UUID.randomUUID()) }
+            .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("TARGET_JOB_NOT_FOUND") }
+        assertThatThrownBy { snapshots.capture(UUID.randomUUID(), resumeId, targetJobId) }
+            .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_FOUND") }
+        jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = '  ' WHERE id = ?", resumeId)
+        assertThatThrownBy { snapshots.capture(userId, resumeId, targetJobId) }
+            .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_READY") }
+        jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = 'Built Kotlin services.', processing_status = 'PENDING' WHERE id = ?", resumeId)
+        assertThatThrownBy { snapshots.capture(userId, resumeId, targetJobId) }
+            .isInstanceOfSatisfying(ApiRequestException::class.java) { assertThat(it.code()).isEqualTo("RESUME_NOT_READY") }
+    }
+
+    @Test
+    fun concurrentSourceEditsNeverProduceAMixedSnapshot() {
+        val userId = local.localUserId()
+        val resumeId = insertResume()
+        val targetJobId = insertTargetJob()
+        jdbc.update("UPDATE ai_interview_app.resumes SET name = 'Gen 0' WHERE id = ?", resumeId)
+        repeat(EXPERIENCES_PER_GENERATION) { insertExperience(userId, "Gen 0 project $it") }
+        val writer = Executors.newSingleThreadExecutor()
+        var generation = 0
+        // After the capture reads the resume and before it reads experiences, commit one writer transaction on another thread
+        // (on this thread it would join the capture's transaction): rename everything to the next generation, delete one experience, add one.
+        val midCaptureWriter = object : JdbcTemplate(jdbc.dataSource!!) {
+            override fun <T> query(sql: String, rowMapper: RowMapper<T>, vararg args: Any?): List<T> {
+                if ("FROM ai_interview_app.experiences" in sql) {
+                    val next = generation + 1
+                    writer.submit(Callable {
+                        transactions.execute {
+                            jdbc.update("UPDATE ai_interview_app.resumes SET name = ? WHERE id = ?", "Gen $next", resumeId)
+                            jdbc.update(
+                                "DELETE FROM ai_interview_app.experiences WHERE id = (SELECT id FROM ai_interview_app.experiences WHERE user_id = ? ORDER BY created_at, id LIMIT 1)",
+                                userId,
+                            )
+                            insertExperience(userId, "Gen $next project new")
+                            jdbc.update("UPDATE ai_interview_app.experiences SET title = regexp_replace(title, '^Gen [0-9]+', ?) WHERE user_id = ?", "Gen $next", userId)
+                        }
+                    }).get(10, TimeUnit.SECONDS)
+                    generation = next
+                }
+                return super.query(sql, rowMapper, *args)
+            }
+        }
+        val racingSnapshots = JobFitSourceSnapshotService(midCaptureWriter, transactions.transactionManager!!)
+        try {
+            repeat(3) { capture ->
+                val snapshot = racingSnapshots.capture(userId, resumeId, targetJobId)
+
+                assertThat(generation).describedAs("writer commits during capture").isEqualTo(capture + 1)
+                assertThat(jdbc.queryForObject("SELECT name FROM ai_interview_app.resumes WHERE id = ?", String::class.java, resumeId)).isEqualTo("Gen $generation")
+                assertThat(jdbc.queryForList("SELECT title FROM ai_interview_app.experiences WHERE user_id = ?", String::class.java, userId))
+                    .hasSize(EXPERIENCES_PER_GENERATION).allMatch { it!!.startsWith("Gen $generation ") }
+                val generations = snapshot.sources.filter { it.sourceType != JobFitSourceType.TARGET_JOB }
+                    .map { it.sourceLabel.substringBefore(" project") }.distinct()
+                assertThat(generations).describedAs("source generations in one snapshot").hasSize(1)
+                assertThat(snapshot.sources.count { it.sourceType == JobFitSourceType.EXPERIENCE }).isEqualTo(EXPERIENCES_PER_GENERATION)
+            }
+        } finally {
+            writer.shutdownNow()
+        }
+    }
+
+    @Test
+    fun legacyResultsAreUnknownAndAgenticResultsTrackSourceChanges() {
+        val resumeId = insertResume()
+        val targetJobId = insertTargetJob()
+        finishRun(resumeId, targetJobId, result(55))
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.UNKNOWN)
+
+        val experienceId = insertExperience(local.localUserId(), "Cluster migration")
+        val run = { finishRun(resumeId, targetJobId, agenticResult(snapshots.capture(local.localUserId(), resumeId, targetJobId))) }
+        run()
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.CURRENT)
+
+        insertExperience(local.localUserId(), "Conference talk")
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
+
+        run()
+        jdbc.update("UPDATE ai_interview_app.experiences SET title = 'Platform migration' WHERE id = ?", experienceId)
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
+
+        run()
+        jdbc.update("DELETE FROM ai_interview_app.experiences WHERE id = ?", experienceId)
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
+
+        run()
+        jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = 'Built Go services.' WHERE id = ?", resumeId)
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
+
+        run()
+        jdbc.update("UPDATE ai_interview_app.resumes SET normalized_text = '' WHERE id = ?", resumeId)
+        assertThat(fits.get(resumeId, targetJobId).freshness).isEqualTo(JobFitFreshness.OUTDATED)
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM ai_interview_app.resumes WHERE id = ?", String::class.java, resumeId)).isEqualTo("READY")
+        assertThat(snapshots.currentManifest(local.localUserId(), resumeId, targetJobId).map { it.sourceType }).doesNotContain(JobFitSourceType.RESUME)
+    }
+
     private fun finishRun(resumeId: UUID, targetJobId: UUID, result: JobFitResult): UUID {
         val jobId = fits.run(resumeId, targetJobId).jobId
         val lease = UUID.randomUUID()
@@ -133,6 +256,33 @@ class JobFitIntegrationTests {
         materialization.materializeJobFit(job, lease, job.resourceId!!, mapper.valueToTree(result))
         jobs.markSucceeded(jobId, lease, mapper.valueToTree(result))
         return jobId
+    }
+
+    private fun agenticResult(snapshot: JobFitSourceSnapshot): JobFitResult {
+        val targetJob = snapshot.sources.first { it.sourceType == JobFitSourceType.TARGET_JOB }
+        val evidence = JobFitEvidenceItem(
+            "${snapshot.snapshotId}:target", snapshot.snapshotId, targetJob.sourceType, targetJob.resourceId,
+            targetJob.contentHash, targetJob.sourceLabel, targetJob.text, targetJob.text,
+        )
+        val metadata = JobFitEvidenceMetadata(
+            snapshotId = snapshot.snapshotId,
+            sourceManifest = snapshot.manifest(),
+            assessments = listOf(JobFitRequirementAssessment("req-1", "Kubernetes", JobFitEvidenceStatus.NOT_ESTABLISHED, listOf(evidence.id), emptyList(), missingEvidenceDescription = "No Kubernetes record")),
+            evidenceCatalog = listOf(evidence),
+            judgments = listOf(JobFitJudgment("req-1", JobFitJudgmentState.UNCHECKED)),
+        )
+        return JobFitResult.fromAgentic(40, "Summary", emptyList(), metadata)
+    }
+
+    private fun insertExperience(userId: UUID, title: String, createdDaysAgo: Int = 0): UUID {
+        val id = UUID.randomUUID()
+        jdbc.update(
+            """
+                INSERT INTO ai_interview_app.experiences (id, user_id, title, organization, start_date, description, source, content_hash, created_at)
+                VALUES (?, ?, ?, 'Acme', '2021-01', 'Deployed Kubernetes.', 'FORM', ?, now() - make_interval(days => ?))
+            """.trimIndent(), id, userId, title, "hash-$id", createdDaysAgo,
+        )
+        return id
     }
 
     private fun result(score: Int) = JobFitResult(score, "Summary", listOf(MatchedRequirement("Kotlin", "Built services")), emptyList(), emptyList())
@@ -162,10 +312,11 @@ class JobFitIntegrationTests {
     private fun count(table: String) = jdbc.queryForObject("SELECT count(*) FROM ai_interview_app.$table", Int::class.java)!!
 
     @BeforeEach fun reset() {
-        jdbc.execute("TRUNCATE TABLE ai_interview_app.job_fits, ai_interview_app.background_job_effects, ai_interview_app.background_jobs, ai_interview_app.job_descriptions, ai_interview_app.resume_chunks, ai_interview_app.resumes, ai_interview_app.app_users CASCADE")
+        jdbc.execute("TRUNCATE TABLE ai_interview_app.job_fits, ai_interview_app.experiences, ai_interview_app.background_job_effects, ai_interview_app.background_jobs, ai_interview_app.job_descriptions, ai_interview_app.resume_chunks, ai_interview_app.resumes, ai_interview_app.app_users CASCADE")
     }
 
     companion object {
+        private const val EXPERIENCES_PER_GENERATION = 5
         @Container @JvmField val POSTGRES = PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("ai_interview_job_fit_test").withUsername("ai_interview").withPassword("ai_interview")
         private val mapper: ObjectMapper = JsonMapper.builder().findAndAddModules().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build()
@@ -174,6 +325,7 @@ class JobFitIntegrationTests {
         private lateinit var transactions: TransactionTemplate
         private lateinit var local: LocalUserService
         private lateinit var fits: JobFitService
+        private lateinit var snapshots: JobFitSourceSnapshotService
         private lateinit var library: ResumeLibraryService
         private lateinit var targetJobs: TargetJobService
         private lateinit var jobs: BackgroundJobStore
@@ -183,7 +335,9 @@ class JobFitIntegrationTests {
             val source = DriverManagerDataSource(POSTGRES.jdbcUrl, POSTGRES.username, POSTGRES.password)
             jdbc = JdbcTemplate(source)
             Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate()
-            transactions = TransactionTemplate(DataSourceTransactionManager(source))
+            val transactionManager = DataSourceTransactionManager(source)
+            transactions = TransactionTemplate(transactionManager)
+            snapshots = JobFitSourceSnapshotService(jdbc, transactionManager)
             local = LocalUserService(jdbc)
             jobs = BackgroundJobStore(jdbc, mapper)
             val guard = RedisRequestGuard(StringRedisTemplate(), RedisUsageProperties(
@@ -193,7 +347,7 @@ class JobFitIntegrationTests {
                 jobs, Mockito.mock(JobDispatcher::class.java), RequestFingerprintService(mapper), local, guard,
                 PROPERTIES, RuntimeModeProperties("all"), JobMetrics(SimpleMeterRegistry()), mapper
             )
-            fits = JobFitService(jdbc, local, submissions, jobs, mapper, transactions)
+            fits = JobFitService(jdbc, local, submissions, jobs, mapper, transactions, snapshots)
             val normalizer = ResumeTextNormalizer()
             val persistence = ResumePersistenceService(jdbc, local, SectionAwareTextChunker(), ContentHasher())
             library = ResumeLibraryService(

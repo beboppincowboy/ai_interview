@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import type { FitView, JobFitResult } from "@/lib/api/types";
 import { recordShape, shapeOf } from "./apiScenarios";
 
 const optionalResultPaths = [
@@ -34,6 +35,60 @@ const rewrite = {
   placeholders: ["X%"]
 };
 
+const agenticFit = {
+  fitScore: 80,
+  summary: "The frozen records support Kotlin.",
+  matchedRequirements: [{ requirement: "Kotlin", evidence: "Built Kotlin services." }],
+  missingRequirements: [{ requirement: "Kafka", guidance: "Production ownership is not established." }],
+  feedback: [],
+  agenticMetadata: {
+    schemaVersion: 1,
+    snapshotId: "snapshot-1",
+    sourceManifest: [{ sourceType: "RESUME", resourceId: "resume-1", sourceLabel: "Resume", contentHash: "hash-1" }],
+    assessments: [{
+      requirementId: "req-kotlin",
+      requirement: "Kotlin",
+      status: "SUPPORTED",
+      targetJobEvidenceIds: ["job-kotlin"],
+      evidenceIds: ["resume-kotlin"],
+      conflictIds: [],
+      missingEvidenceDescription: null
+    }],
+    evidenceCatalog: [{
+      id: "resume-kotlin",
+      snapshotId: "snapshot-1",
+      sourceType: "RESUME",
+      resourceId: "resume-1",
+      contentHash: "hash-1",
+      sourceLabel: "Resume",
+      passage: "Built Kotlin services.",
+      quote: "Built Kotlin services."
+    }],
+    conflicts: [{ id: "conflict-1", description: "Saved records differ.", evidenceIds: ["experience-a", "experience-b"] }],
+    judgments: [{
+      requirementId: "req-kotlin",
+      state: "JUDGED",
+      provenance: { provider: "JEV", model: "jev-1.14.0", rubricVersion: "job-fit-v1" },
+      status: "SUPPORTED",
+      evidenceIds: ["resume-kotlin"],
+      missingEvidence: [],
+      providerProbabilities: { SUPPORTED: 0.91 }
+    }],
+    trace: [{ kind: "FALLBACK", summary: "The generation model judged the available evidence.", round: 1 }],
+    fallbackUsed: true,
+    fallbackReason: "Jev timed out."
+  }
+} satisfies JobFitResult;
+
+const fitView = {
+  resumeId: "resume-1",
+  targetJobId: "job-1",
+  result: null,
+  createdAt: null,
+  latestJob: null,
+  freshness: "UNKNOWN"
+} satisfies FitView;
+
 it("retains declared paths for optional AI result arrays when empty", () => {
   expect(shapeOf({ result: { items: [], rewrites: [] } }).sort()).toEqual(optionalResultPaths);
 });
@@ -63,6 +118,75 @@ it("holds empty job-fit lists to their declared item fields", () => {
     "result.missingRequirements[].requirement: string"
   ]);
   expect(() => shapeOf({ result: { feedback: [{ priority: "HIGH", message: 3 }] } })).toThrow();
+});
+
+it("records the versioned agentic evidence contract while retaining legacy fit fields", () => {
+  expect(shapeOf(agenticFit).sort()).toEqual([
+    "agenticMetadata",
+    "agenticMetadata.assessments",
+    "agenticMetadata.assessments[].conflictIds",
+    "agenticMetadata.assessments[].evidenceIds",
+    "agenticMetadata.assessments[].missingEvidenceDescription: null",
+    "agenticMetadata.assessments[].requirement: string",
+    "agenticMetadata.assessments[].requirementId: string",
+    "agenticMetadata.assessments[].status: string",
+    "agenticMetadata.assessments[].targetJobEvidenceIds",
+    "agenticMetadata.conflicts",
+    "agenticMetadata.conflicts[].description: string",
+    "agenticMetadata.conflicts[].evidenceIds",
+    "agenticMetadata.conflicts[].id: string",
+    "agenticMetadata.evidenceCatalog",
+    "agenticMetadata.evidenceCatalog[].contentHash: string",
+    "agenticMetadata.evidenceCatalog[].id: string",
+    "agenticMetadata.evidenceCatalog[].passage: string",
+    "agenticMetadata.evidenceCatalog[].quote: string",
+    "agenticMetadata.evidenceCatalog[].resourceId: string",
+    "agenticMetadata.evidenceCatalog[].snapshotId: string",
+    "agenticMetadata.evidenceCatalog[].sourceLabel: string",
+    "agenticMetadata.evidenceCatalog[].sourceType: string",
+    "agenticMetadata.fallbackReason: string",
+    "agenticMetadata.fallbackUsed: boolean",
+    "agenticMetadata.judgments",
+    "agenticMetadata.judgments[].evidenceIds",
+    "agenticMetadata.judgments[].missingEvidence",
+    "agenticMetadata.judgments[].providerProbabilities",
+    "agenticMetadata.judgments[].providerProbabilities.SUPPORTED: number",
+    "agenticMetadata.judgments[].provenance",
+    "agenticMetadata.judgments[].provenance.model: string",
+    "agenticMetadata.judgments[].provenance.provider: string",
+    "agenticMetadata.judgments[].provenance.rubricVersion: string",
+    "agenticMetadata.judgments[].requirementId: string",
+    "agenticMetadata.judgments[].state: string",
+    "agenticMetadata.judgments[].status: string",
+    "agenticMetadata.schemaVersion: number",
+    "agenticMetadata.snapshotId: string",
+    "agenticMetadata.sourceManifest",
+    "agenticMetadata.sourceManifest[].contentHash: string",
+    "agenticMetadata.sourceManifest[].resourceId: string",
+    "agenticMetadata.sourceManifest[].sourceLabel: string",
+    "agenticMetadata.sourceManifest[].sourceType: string",
+    "agenticMetadata.trace",
+    "agenticMetadata.trace[].kind: string",
+    "agenticMetadata.trace[].round: number",
+    "agenticMetadata.trace[].summary: string",
+    "feedback",
+    "fitScore: number",
+    "matchedRequirements",
+    "matchedRequirements[].evidence: string",
+    "matchedRequirements[].requirement: string",
+    "missingRequirements",
+    "missingRequirements[].guidance: string",
+    "missingRequirements[].requirement: string",
+    "summary: string"
+  ].sort());
+  expect(shapeOf(fitView).sort()).toEqual([
+    "createdAt: null",
+    "freshness: string",
+    "latestJob: null",
+    "resumeId: string",
+    "result: null",
+    "targetJobId: string"
+  ].sort());
 });
 
 it("reports which optional AI result arrays arrived with items", () => {

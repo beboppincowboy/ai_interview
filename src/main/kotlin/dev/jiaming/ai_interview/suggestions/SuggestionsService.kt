@@ -99,7 +99,7 @@ class SuggestionsService(
     fun promptSources(userId: UUID, resumeId: UUID): List<SuggestionSourceInput> {
         val experiences = jdbcTemplate.query(
             "SELECT id, title, organization, start_date, end_date, description FROM ai_interview_app.experiences WHERE user_id = ?",
-            RowMapper { rs, _ -> rs.getObject("id", UUID::class.java) to experienceText(rs) }, userId,
+            RowMapper { rs, _ -> rs.getObject("id", UUID::class.java) to experiencePromptText(rs) }, userId,
         ).toMap()
         return currentSources(userId, resumeId).mapNotNull { source ->
             when (source.type) {
@@ -108,13 +108,6 @@ class SuggestionsService(
                 SuggestionSourceType.EXPERIENCE -> experiences[source.id]?.let { SuggestionSourceInput.Experience(source, it) }
             }
         }
-    }
-
-    private fun experienceText(rs: ResultSet): String {
-        val start = rs.getString("start_date")
-        val end = rs.getString("end_date")
-        val dates = if (start == null && end == null) null else "${start ?: "unknown"} to ${end ?: "present"}"
-        return listOfNotNull(rs.getString("title"), rs.getString("organization"), dates, rs.getString("description")).joinToString("\n")
     }
 
     private fun requireOwnedInputs(userId: UUID, resumeId: UUID, targetJobId: UUID, lockRows: Boolean, requireReady: Boolean) {
@@ -174,4 +167,14 @@ class SuggestionsService(
         const val RESOURCE = "experience-suggestions"
         private const val IDEMPOTENCY_ACTION = "experience-suggestions"
     }
+}
+
+/** Formats RAW, unescaped text from the current row's title, organization, start_date, end_date and description columns.
+ * Joins non-null fields with newlines; missing date endpoints use unknown/present, and both absent omit dates.
+ * Does not advance the ResultSet or query the database; propagates column-access errors. */
+fun experiencePromptText(rs: ResultSet): String {
+    val start = rs.getString("start_date")
+    val end = rs.getString("end_date")
+    val dates = if (start == null && end == null) null else "${start ?: "unknown"} to ${end ?: "present"}"
+    return listOfNotNull(rs.getString("title"), rs.getString("organization"), dates, rs.getString("description")).joinToString("\n")
 }

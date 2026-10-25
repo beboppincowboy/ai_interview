@@ -45,6 +45,14 @@
     "targetJob.text: string",
     "targetJob.updatedAt: string"
   ],
+  "GET /api/resumes/{id}/target-jobs/{id}/fit (unrun)": [
+    "createdAt: null",
+    "freshness: string",
+    "latestJob: null",
+    "result: null",
+    "resumeId: string",
+    "targetJobId: string"
+  ],
   "POST /api/resumes/{id}/score": [
     "inputRefs",
     "inputRefs.attemptId: null",
@@ -231,6 +239,32 @@
     "stage: string",
     "startedAt: string",
     "status: string"
+  ],
+  "GET /api/resumes/{id}/target-jobs/{id}/fit (ready)": [
+    "createdAt: string",
+    "freshness: string",
+    "latestJob",
+    "latestJob.attempts: number",
+    "latestJob.error: null",
+    "latestJob.jobId: string",
+    "latestJob.jobType: string",
+    "latestJob.maxAttempts: number",
+    "latestJob.stage: string",
+    "latestJob.status: string",
+    "result",
+    "result.feedback",
+    "result.feedback[].message: string",
+    "result.feedback[].priority: string",
+    "result.fitScore: number",
+    "result.matchedRequirements",
+    "result.matchedRequirements[].evidence: string",
+    "result.matchedRequirements[].requirement: string",
+    "result.missingRequirements",
+    "result.missingRequirements[].guidance: string",
+    "result.missingRequirements[].requirement: string",
+    "result.summary: string",
+    "resumeId: string",
+    "targetJobId: string"
   ],
   "GET /api/practice-sets/{id} (ready)": [
     "createdAt: string",

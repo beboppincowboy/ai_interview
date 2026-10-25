@@ -530,7 +530,8 @@ export function createMockStore(options: MockStoreOptions = {}) {
       targetJobId,
       result: entry?.result ?? null,
       createdAt: entry?.createdAt ?? null,
-      latestJob: jobOf(db, entry?.jobId ?? null)
+      latestJob: jobOf(db, entry?.jobId ?? null),
+      freshness: "UNKNOWN"
     };
   });
 
