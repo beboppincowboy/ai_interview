@@ -54,6 +54,23 @@ class RagIndexingServiceTests {
     }
 
     @Test
+    fun experienceTextIsChunkedLocallyAndClaimedUnderItsOwnSourceKind() {
+        Mockito.`when`(vectorStoreProvider.ifAvailable).thenReturn(vectorStore)
+        Mockito.`when`(repository.insertClaim(any(), any(), eq(NOW))).thenReturn(true)
+        Mockito.`when`(repository.markReady(any(), eq(1L), any(), eq(NOW))).thenReturn(true)
+
+        service().ensureIndexed(ResolvedDocument(DocumentSourceType.EXPERIENCE, UUID.randomUUID(), "experience-hash", "Cluster migration\nDeployed Kubernetes.", null))
+
+        Mockito.verify(repository).insertClaim(any(), eq(identity().copy(sourceType = DocumentSourceType.EXPERIENCE, contentHash = "experience-hash")), eq(NOW))
+        val documents = listCaptor()
+        Mockito.verify(vectorStore).add(documents.capture())
+        assertThat(documents.value).isNotEmpty().allSatisfy {
+            assertThat(it.metadata).containsEntry("sourceType", "experience")
+            assertThat(it.metadata["contextId"].toString()).startsWith("experience:")
+        }
+    }
+
+    @Test
     fun staleClaimTakeoverCannotBeMarkedReadyByLostOwner() {
         Mockito.`when`(vectorStoreProvider.ifAvailable).thenReturn(vectorStore)
         val identity = identity()
