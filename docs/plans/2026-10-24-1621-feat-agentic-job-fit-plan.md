@@ -3,6 +3,7 @@ title: Agentic Job Fit - Plan
 type: feat
 date: 2026-10-24
 deepened: 2026-10-24
+updated: 2026-10-25
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: design-interview
@@ -15,9 +16,9 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** Candidates can see which target-job requirements their recorded experience supports, inspect the evidence, and identify gaps without mistaking missing documentation for missing ability.
-- **Means:** Extend existing Job Fit with a Kotlin-owned evidence loop and Jev judgments (KTD1, KTD4).
+- **Means:** Extend existing Job Fit with a Kotlin-owned evidence loop and Jev judgments, and internal MCP retrieval tools (KTD1, KTD4, KTD14).
 - **Authority:** Product Contract governs behavior; Planning Contract governs mechanisms; units implement both. This unified plan is canonical; the origin interview is historical context.
-- **Execution profile:** Deliver U1–U8 in dependency order. Feature remains disabled by default until the evaluation gate passes. Planning readiness does not mean the provider or feature has been tested.
+- **Execution profile:** Deliver U1–U9 in dependency order; U9 precedes U5 despite its appended stable ID. Feature remains disabled by default until the evaluation gate passes. Planning readiness does not mean the provider or feature has been tested.
 - **Stop conditions:** Surface a change requiring new product scope or an infeasible settled decision. Missing live credentials block live proof and default enablement, not offline implementation.
 - **Tail ownership:** The implementer owns integration, verification, documentation and removal of abandoned approaches. Publishing, deployment and default enablement require their respective existing authorization and release gates.
 
@@ -72,6 +73,10 @@ The present matched/missing split also cannot express partial support or disting
 - R14. Show brief progress and an expandable explanation of evidence, retrieval and fallback use; expose decision summaries rather than private model reasoning.
 - R15. Enforce an overall run deadline and provider-call limits, including retries. Calibrate numerical limits from measured runs and worker behavior before default enablement.
 
+**Internal agent tools**
+
+- R16. The Job Fit agent selects internal MCP retrieval calls for unresolved requirements; Kotlin authorizes and validates each call against the frozen run and enforces R7–R9 and R15. External-assistant access is deferred.
+
 ### Acceptance Examples
 
 - AE1. **Covers R2–R5:** A saved project omitted from the resume explicitly describes deploying Kubernetes. Job Fit can cite that experience for the selected target job's Kubernetes requirement.
@@ -82,15 +87,18 @@ The present matched/missing split also cannot express partial support or disting
 - AE6. **Covers R11:** A user adds, renames or deletes an experience after a successful fit. That fit becomes outdated; reassessment uses a new snapshot.
 - AE7. **Covers R1, R12:** With the flag disabled, current Job Fit and other coaching workflows retain their existing outputs and behavior.
 
+- AE8. **Covers R7, R11, R15, R16:** The agent requests experience evidence for an unresolved requirement through MCP. The tool searches only its authorized frozen snapshot; a forged snapshot ID, extra round, expired run or lost lease is rejected before retrieval.
+
 ### Scope Boundaries
 
-**Deferred to Follow-Up Work:** Apply the proven loop to experience suggestions, practice questions and answer feedback; evaluate local Laya as an alternative judge.
+**Deferred to Follow-Up Work:** Apply the proven loop to experience suggestions, practice questions and answer feedback; evaluate local Laya as an alternative judge; expose Job Fit submission/status/results to external MCP clients.
 
-**Not in this delivery:** Ask/chat, MCP endpoints, a Python orchestration service, web search, new external document sources, new embedding providers, a general agent framework, or autonomous edits to candidate records.
+**Not in this delivery:** Ask/chat, public MCP endpoints, arbitrary third-party MCP servers, a Python orchestration service, web search, new external document sources, new embedding providers, a general agent framework, or autonomous edits to candidate records.
 
 ### Origin Preservation
 
 Product Contract preserves the confirmed scope in the origin interview, assigning R1–R15 to its previously unnumbered decisions.
+Product Contract changed on 2026-10-25: user selected internal MCP retrieval first (R16, AE8), superseding the MCP exclusion. External MCP access remains deferred.
 The generator fallback supersedes the earlier single-pass outage fallback; Jev-first supersedes local-Laya-first.
 
 ---
@@ -110,7 +118,7 @@ All file references are relative to the repository root; new file names are prop
 
 ### Key Technical Decisions
 
-- KTD1. **Kotlin orchestration inside the existing background job.** Use a Job Fit-specific service and narrow internal retrieve/judge/generate operations, not arbitrary model-selected tools or SQL. Preserve the existing submit/read/job APIs. (session-settled: user-approved — chosen over separate Python/MCP orchestration: fit the current runtime.) Implements R1, R7, R15.
+- KTD1. **Kotlin orchestration inside the existing background job.** Use a Job Fit-specific service and narrow retrieve/judge/generate operations, with model-selected retrieval exposed through the allowlisted internal MCP boundary (KTD14); no arbitrary tools or SQL. Preserve the existing submit/read/job APIs. (session-settled: user-approved — chosen over separate Python orchestration: fit the current runtime; the later internal MCP addition preserves Kotlin orchestration.) Implements R1, R7, R15.
 - KTD2. **Versioned additive result contract.** Retain the existing score, summary, matched/missing arrays and feedback for legacy readers. Add nullable/defaulted agentic metadata with schema version, canonical per-requirement assessments, evidence catalog, source manifest, trace and fallback marker. For agentic results, derive legacy matched entries from Supported and missing entries from the other statuses; the UI uses canonical assessments. Legacy results carry no fabricated verification or freshness guarantees. Implements R4–R6, R9–R14.
 - KTD3. **Durable first-attempt snapshot.** Within a short repeatable-read transaction at the first worker attempt, capture the owner's selected documents plus the full sorted experience set and persist a versioned checkpoint before any external calls. Capture execution mode at submission in the versioned job payload; a missing mode decodes as legacy, so queued jobs and retries ignore later flag changes. Retries reuse frozen content. Freshness compares canonical IDs and hashes of every prompt-visible field at read time; compute a separate revision hash because existing experience dedup hashes omit organization/dates. Legacy freshness is unknown. No database transaction spans network calls. Implements R2, R3, R11.
 - KTD4. **Jev-first judgment with generator fallback.** Use direct authenticated HTTP through a small Kotlin adapter, with a common typed judgment interface shared by the generator fallback. Keep judgment provenance separate from evidence status and include actual model identity and rubric version. (session-settled: user-directed — chosen over local Laya first: use Jev initially.) The override/fallback preserves R8, R13 rather than silently switching to old retrieval.
@@ -124,6 +132,8 @@ All file references are relative to the repository root; new file names are prop
 - KTD12. **Guarded rollout and historical compatibility.** Flag defaults off and only controls new runs. Serve both old and new result versions, resume old complete checkpoints, and keep additive schema migrations when disabling the flag. Agentic failures retain the last successful fit. No partial assessment is materialized as success. Implements R9, R11, R12.
 - KTD13. **Private execution checkpoints.** Existing `JobStatusResponse.from` and `SupabaseJobStatusReader` forward stored result payloads even while processing. For agentic Job Fit only, status API results are null until successful completion, and the exposed Supabase projection cannot return private checkpoint state. Scope any projection/privilege changes to this new state; preserve the checkpoint visibility contract of legacy and unrelated job types. Keep progress in safe stage metadata. Implements R11, R14.
 
+- KTD14. **Internal MCP retrieval; Kotlin retains authority.** (session-settled: user-directed — chosen over external-assistant access first: make the existing RAG workflow agentic.) The Kotlin worker hosts an MCP client whose allowlisted tool requests come from the generation model, not Jev. A private WebMVC MCP server delegates to U3 retrieval over U2 snapshots. Jev judges relevance/sufficiency; the generator can request a validated follow-up under R8. Jev HTTP and generation stay direct adapters. MCP supplies protocol interoperability, not ownership or execution guarantees. Implements R16, R2–R3, R7–R9, R11, R15.
+
 ### High-Level Technical Design
 
 Component and data boundaries:
@@ -135,7 +145,9 @@ flowchart TB
   JOB --> SNAP[Owner-scoped frozen source snapshot]
   JOB --> LOOP[Kotlin Job Fit evidence loop]
   SNAP --> LOOP
-  LOOP --> RET[Existing RAG indexing and retrieval]
+  LOOP --> MCP[Kotlin MCP client and tool-call gate]
+  MCP --> TOOLS[Private MCP retrieval server]
+  TOOLS --> RET[Existing RAG indexing and retrieval]
   LOOP --> JEV[Jev HTTP adapter]
   LOOP --> GEN[Existing generation provider]
   LOOP --> CHECK[Citation and claim verification]
@@ -200,6 +212,20 @@ Mode behavior:
 | On | Jev missing/invalid credentials, transient transport failure or exhausted 429/529 retries | Generator judgment fallback, visibly recorded, with a redacted operational error |
 | On | Invalid request or response contract (400/413/415/422, missing answers, malformed JSON) | Fail with an integration error; do not hide adapter defects as provider outages |
 | On | Active judge cannot verify repaired draft | Failed job; previous successful result retained |
+
+### Internal MCP Contract
+
+Directional tool surface: `search_candidate_evidence` accepts a batch of requirement IDs and bounded queries and returns the U1 evidence envelopes plus explicit degradation/errors. It searches selected resume and all eligible saved experiences through U3. Requirement extraction reads the frozen target job directly; target text cannot become candidate evidence. Do not add generic SQL, file, HTTP, write, or tool-discovery proxies.
+
+The model sees a fixed tool schema and evidence results. It cannot choose a server URL, credential, owner, snapshot, deadline or round number. The worker binds each operation to a short-lived opaque capability for the persisted run, snapshot, owner, operation ID and lease generation. The server verifies that binding against current persisted state before reading sources. Never infer a remote caller's owner from `LocalUserService`, which currently represents a single local candidate rather than authenticated multi-user identity.
+
+Use private Streamable HTTP with no browser-facing route. Validate Origin when present, authenticate every request, restrict network reachability, and redact capabilities/source text from logs. The transport client injects credentials outside model-visible arguments. Public OAuth discovery/client registration is deferred with external MCP access. A local development endpoint binds loopback; deployed worker/server communication uses authenticated private transport and TLS across hosts. A transport session ID alone is never authorization.
+
+Kotlin requires the initial retrieval before assessment; the model may choose requirement queries but cannot skip that round or final verification. Kotlin collects allowed model tool requests into one persisted retrieval round, reserves budget before dispatch, and rejects parallel or repeated calls that exceed it. Tool retries use the same operation ID and reuse completed results; uncertain work keeps its reservation. Server-side lease/deadline checks and worker cancellation stop further work after expiry. A disconnected MCP request cannot reset budgets or authorize another round. Malformed/unauthorized tool calls fail closed; an MCP outage follows bounded retry and then fails the run, preserving the last valid fit. The U3 local vector fallback remains behind MCP; do not silently bypass the protocol.
+
+Pin a mutually supported MCP protocol/SDK version during U9 and contract-test actual HTTP negotiation. The repository currently pins Spring AI `2.0.0-M4`; current server documentation describes newer APIs. Validate the matching starter against Boot 4.0.4 first. If an upgrade is required, make it an explicit U9 dependency change with existing generation/embedding regression coverage, not an incidental whole-stack upgrade. Starter auto-configuration does not supply authentication.
+
+Sources: [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [MCP authorization boundaries](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), and [Spring AI MCP server configuration/security](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-server-boot-starter-docs.html). These are planning references; runtime compatibility and interoperability remain U9 verification gates.
 
 ### Assumptions and Implementation-Time Calibration
 
@@ -316,13 +342,13 @@ Mode behavior:
 
 **Goal:** Produce only a verified assessment after targeted evidence collection.
 
-**Requirements:** R4–R10, R13, R15; KTD1, KTD4, KTD5, KTD7–KTD9.
+**Requirements:** R4–R10, R13, R15–R16; KTD14, KTD1, KTD4, KTD5, KTD7–KTD9.
 
-**Dependencies:** U2, U3, U4.
+**Dependencies:** U2, U3, U4, U9.
 
 **Files:** Create `src/main/kotlin/dev/jiaming/ai_interview/fit/AgenticJobFitService.kt`, `src/main/kotlin/dev/jiaming/ai_interview/fit/JobFitExecutionState.kt`, `src/main/kotlin/dev/jiaming/ai_interview/fit/JobFitClaimVerifier.kt` in the same directory, and their tests under `src/test/kotlin/dev/jiaming/ai_interview/fit/`; extend `src/main/kotlin/dev/jiaming/ai_interview/coach/CoachPromptBuilder.kt` and Job Fit-specific prompt resources; reuse `src/main/kotlin/dev/jiaming/ai_interview/coach/StructuredGenerationClient.kt`.
 
-**Approach:** Persist requirement extraction, evidence, typed judgments and completed operations as explicit stages. Keep all extracted target-job requirements in the final canonical assessments, including unresolved ones. An agent challenge records a specific gap and cannot reset search state. Apply code-first identity/quote checks, then semantic claim verification; regenerate the full score/summary/projections when a rejected claim changes the assessment.
+**Approach:** Route model-selected retrieval through U9; Kotlin admits calls and owns the shared round/deadline budget. Persist requirement extraction, evidence, typed judgments and completed operations as explicit stages. Keep all extracted target-job requirements in the final canonical assessments, including unresolved ones. An agent challenge records a specific gap and cannot reset search state. Apply code-first identity/quote checks, then semantic claim verification; regenerate the full score/summary/projections when a rejected claim changes the assessment.
 
 **Execution note:** Prove the branching loop with fake providers and a fake clock before connecting live inference.
 
@@ -335,6 +361,7 @@ Mode behavior:
 5. Covers AE5. Unknown citations, fabricated quotes, unsupported claims, and unsupported summary claims consume at most one shared repair; the repair is reverified.
 6. Judge outage uses generation fallback; generation failure, deadline or call-budget exhaustion cannot become a successful unverified assessment.
 7. Checkpoint restore preserves rounds, reservations, repair count, original deadline and completed model results.
+8. MCP admission persists shared round/provider reservations and operation replay; concurrent calls and retries cannot reset limits.
 
 **Verification:** Deterministic loop tests cover every branch without external calls or a second hidden schema-repair loop.
 
@@ -359,6 +386,8 @@ Mode behavior:
 5. Failed reassessment retains the prior valid fit; effect fencing prevents duplicate final writes.
 6. Status stages travel through both JDBC and configured Supabase job-status readers without enum/SQL failures.
 7. Processing, retrying and failed agentic Fit jobs expose no private snapshot/checkpoint content through JDBC or Supabase status reads; succeeded jobs expose only the public result. Legacy and other job types retain current checkpoint visibility.
+
+8. MCP capabilities are bound to the actual owner/snapshot and current lease generation; takeover revokes old calls, and persisted retries replay completed retrieval without exposing private checkpoints.
 
 **Verification:** Worker and PostgreSQL integration tests prove resume, fencing and old/new job compatibility; live deployment wiring is checked during U8.
 
@@ -388,9 +417,9 @@ Mode behavior:
 
 **Goal:** Supply evidence for safe enablement and operating limits.
 
-**Requirements:** R12, R15; KTD8, KTD11, KTD12.
+**Requirements:** R12, R15–R16; KTD8, KTD11, KTD12, KTD14.
 
-**Dependencies:** U6, U7.
+**Dependencies:** U6, U7, U9.
 
 **Files:** Create synthetic fixtures under `src/test/resources/agentic-job-fit/`, `src/test/kotlin/dev/jiaming/ai_interview/fit/AgenticJobFitEvaluationTests.kt`, an opt-in live evaluation under `src/integrationTest/kotlin/dev/jiaming/ai_interview/fit/AgenticJobFitLiveEvaluationTests.kt`, and `docs/operations/agentic-job-fit.md`; update `README.md`, `.env.example` and `docs/api/frontend-api-contract.md` as required.
 
@@ -404,6 +433,31 @@ Mode behavior:
 4. Large-catalog and lease-loss runs remain bounded and do not silently drop sources; disabling the flag restores baseline for new runs and keeps saved results readable.
 
 **Verification:** R12's reviewed-set gate is documented with reproducible inputs, model identities and selected settings. Default flag remains off if any required proof is missing.
+
+---
+
+### U9. Add private MCP retrieval tools and Kotlin client
+
+**Goal:** Let the existing Job Fit agent request evidence through MCP without transferring run authority to the model or transport.
+
+**Requirements:** R2–R3, R7–R9, R11, R15–R16; KTD1, KTD3, KTD8, KTD13–KTD14.
+
+**Dependencies:** U1, U2, U3. Execute before U5; existing U-IDs remain stable.
+
+**Files:** Create `src/main/kotlin/dev/jiaming/ai_interview/fit/mcp/JobFitMcpConfiguration.kt`, `JobFitMcpTools.kt`, `JobFitMcpClient.kt`, and `JobFitMcpAuthorization.kt` in that package; create corresponding tests under `src/test/kotlin/dev/jiaming/ai_interview/fit/mcp/` and `src/integrationTest/kotlin/dev/jiaming/ai_interview/fit/mcp/JobFitMcpIntegrationTests.kt`. Modify `build.gradle.kts`, `src/main/resources/application.yaml`, `.env.example`, private deployment configuration and `docs/operations/agentic-job-fit.md` as needed. U9 owns transport plus capability/admission interfaces and fail-closed protocol checks with fake admission state. U5 implements persisted round/deadline/provider-budget admission; U6 binds capabilities to real lease generations and checkpoints. Those later units own persistence/retry/lease integration tests, avoiding a circular dependency.
+
+**Approach:** Implement the Internal MCP Contract using the compatible Spring AI/Java MCP SDK rather than hand-written JSON-RPC. Register only the explicit retrieval tool. Share U3 retrieval and U1 evidence types; validate tool input/output at both boundaries. Start with a fake model, a real protocol client/server, and fake admission state; compose persisted admission in U5/U6 before live generation. Disable the endpoint by default and independently of the public application routes; flag-on validation requires usable internal MCP configuration. Document development connection, secret rotation, deployment isolation and rollback. Existing REST/UI flows remain the entry point.
+
+**Test scenarios:**
+
+1. Covers AE8. Initialize, list the single allowed tool, call it over HTTP and decode snapshot-bound resume/experience evidence; no unrelated application methods appear as tools.
+2. Foreign-owner/snapshot IDs, missing/expired capabilities, hostile Origin and model-supplied server addresses fail closed at the protocol boundary using controlled admission state; U6 proves revoked lease generations against persistence.
+3. Oversized batches and unknown requirement IDs are rejected; duplicate/concurrent calls delegate to the admission interface and cannot bypass a denial. U5 proves persisted budget reservations and deterministic completed-operation replay; uncertain calls retain reservations.
+4. MCP timeout, malformed result, transport disconnect and worker interruption cannot become success or reset the deadline; U3 vector degradation stays inside the authorized tool.
+5. Flag-off opens no MCP endpoint and preserves baseline behavior. The HTTP route cannot be reached through public deployment ingress; no token or private checkpoint appears in protocol/application logs or status responses.
+6. The selected SDK/protocol versions interoperate over HTTP on Boot 4; any dependency update preserves existing generator, embedding, serialization and frontend contracts.
+
+**Verification:** U9 proves real HTTP MCP client/server negotiation, schema validation and fail-closed admission delegation. U5/U6 must then prove persisted ownership/lease/budget integration before agentic enablement. U8 adds a live generation-to-tool-to-verified-fit smoke and measures MCP overhead; missing wire/security proof blocks agentic enablement.
 
 ---
 
@@ -422,6 +476,7 @@ These are implementation-time gates; no tests or live model calls were run to cr
 | Judge wire proof | Opt-in pinned-Jev smoke with synthetic source text | U4/U8; credentials stay in authorized server environment |
 | Quality gate | Held-out reviewed baseline comparison per R12 | Before default enablement; separate primary/fallback evidence |
 | Browser proof | Real Fit page, flag on/off, citations, conflict, outdated result, fallback and failed reassessment | U7/U8 |
+| MCP wire and isolation proof | U9 real HTTP negotiation/tool calls, unauthorized access, retry/lease/budget replay; U8 live end-to-end tool smoke | U9/U8; required before agentic enablement |
 | Documentation integrity | `git diff --check` | All units |
 
 There is no root `release:validate` command in the inspected manifests; do not invent one. If additional repo-local release instructions apply at execution, include them in the implementer's final verification report.
@@ -430,8 +485,8 @@ There is no root `release:validate` command in the inspected manifests; do not i
 
 ## Definition of Done
 
-- U1–U8 satisfy their verification outcomes and traced requirements; execution progress is tracked outside this plan.
-- R1–R15 and AE1–AE7 have test or reviewed evaluation evidence, with live blockers distinguished from passed checks.
+- U1–U9 satisfy their verification outcomes and traced requirements; execution progress is tracked outside this plan.
+- R1–R16 and AE1–AE8 have test or reviewed evaluation evidence, with live blockers distinguished from passed checks.
 - Existing fit rows/jobs and flag-off workflows remain usable; schema, API, frontend types, mocks and job-stage readers agree.
 - No unverified final result can replace a valid saved fit; source ownership, freshness, budgets and lease fencing are covered through real persistence boundaries.
 - Default enablement is supported by U8 evidence or remains explicitly blocked and off; missing live proof is not called complete production validation.
