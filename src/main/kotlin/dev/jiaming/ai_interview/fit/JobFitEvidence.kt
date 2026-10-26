@@ -36,7 +36,8 @@ enum class JobFitTraceKind {
     VERIFICATION,
 }
 
-/** Frozen source identity and non-blank label/hash; hash encoding is unspecified. Invalid inputs throw [IllegalArgumentException]. */
+/** Frozen source identity; snapshot capture uses [JobFitFrozenSource.contentHash] (lowercase SHA-256 hex of UTF-8(label + NUL + text)).
+ * Construction checks only non-blank label/hash; invalid inputs throw [IllegalArgumentException]. */
 data class JobFitSourceManifestEntry(
     val sourceType: JobFitSourceType,
     val resourceId: UUID,
@@ -198,7 +199,8 @@ data class JobFitTraceEvent(
 }
 
 /** Validates one source snapshot: exactly one resume/target job, unique identities, and catalog references matching snapshot/source/hash/label.
- * Each assessment requires one judgment with the same candidate evidence set; JUDGED status matches, UNCHECKED requires NOT_ESTABLISHED.
+ * Assessment and judgment requirement IDs are unique; each assessment requires one judgment with the same candidate evidence set.
+ * JUDGED status matches the assessment; UNCHECKED requires NOT_ESTABLISHED.
  * Citing any conflict member requires linking that conflict and citing all its evidence IDs.
  * Only schema version 1 is accepted; fallbackReason is non-blank iff fallbackUsed, otherwise null.
  * Invalid inputs throw [IllegalArgumentException]. RAW source text is retained; structural validation does not establish semantic support.

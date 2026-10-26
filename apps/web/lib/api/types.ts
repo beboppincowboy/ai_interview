@@ -189,7 +189,7 @@ export type FitView = {
   createdAt: string | null;
   /** Newest background job for this resource, in any status (check `status`); null only if none was ever submitted. */
   latestJob: LatestJob | null;
-  /** Current server emits UNKNOWN; omitted on older servers also means unknown. Source-change evaluation is not implemented yet. */
+  /** CURRENT or OUTDATED compares an agentic result's frozen sources with current records; legacy results and older servers are UNKNOWN. */
   freshness?: JobFitFreshness;
 };
 
@@ -317,7 +317,7 @@ export type JobFitSourceType = "RESUME" | "TARGET_JOB" | "EXPERIENCE";
 export type JobFitJudgmentState = "JUDGED" | "UNCHECKED";
 export type JobFitTraceKind = "RETRIEVAL" | "JUDGMENT" | "FALLBACK" | "VERIFICATION";
 
-/** Frozen source identity (resourceId is a UUID); contentHash is non-blank with no prescribed encoding. */
+/** Frozen source identity (resourceId is a UUID); snapshot capture hashes UTF-8(label + NUL + text) as lowercase SHA-256 hex. */
 export type JobFitSourceManifestEntry = {
   sourceType: JobFitSourceType;
   resourceId: string;
