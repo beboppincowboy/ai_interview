@@ -96,6 +96,15 @@ app:
     rrf-k: ${RAG_RRF_K:15}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
     chunk-schema: ${RAG_CHUNK_SCHEMA:section-block-v3}
+  job-fit:
+    # Private MCP retrieval for agentic Job Fit; off by default. See docs/operations/agentic-job-fit.md.
+    mcp:
+      enabled: ${JOB_FIT_MCP_ENABLED:false}
+      token: ${JOB_FIT_MCP_TOKEN:}
+      base-url: ${JOB_FIT_MCP_BASE_URL:http://127.0.0.1:${server.port:8080}}
+      request-timeout: ${JOB_FIT_MCP_REQUEST_TIMEOUT:30s}
+      max-queries-per-call: ${JOB_FIT_MCP_MAX_QUERIES_PER_CALL:8}
+      max-query-chars: ${JOB_FIT_MCP_MAX_QUERY_CHARS:500}
   voice:
     enabled: ${VOICE_ENABLED:false}
     model: ${VOICE_MODEL:gemini-3.8-live}

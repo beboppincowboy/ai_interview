@@ -61,7 +61,7 @@ class JobFitSourceSnapshotService(
     }
 
     /** Returns RAW source text from the job checkpoint without rereading live sources, or blocks on capture and checkpoint persistence.
-     * Caller supplies the job's selected document IDs; restored checkpoints are trusted and not rebound to these arguments.
+     * Caller supplies IDs bound to the job payload and keeps its RAW result checkpoint private; restored snapshots are not rebound to these arguments.
      * Propagates capture, checkpoint decoding, persistence and lease-loss errors; makes no provider calls. */
     fun frozenSources(context: JobExecutionContext, resumeId: UUID, targetJobId: UUID): JobFitSourceSnapshot =
         context.checkpoint(CHECKPOINT_FIELD, JobFitSourceSnapshot::class.java)

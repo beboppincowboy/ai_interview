@@ -739,14 +739,18 @@ schema version `1`, and their `fitScore` must be an integer from 0 through 100:
 ```
 
 `sourceManifest` freezes source type, resource ID, immutable label, and content hash for the run. It contains exactly
-one `RESUME` and one `TARGET_JOB`, with unique `(sourceType, resourceId)` identities. Hash encoding is unspecified;
-the `sha256:…` values above are illustrative. `evidenceCatalog`
+one `RESUME` and one `TARGET_JOB`, with unique `(sourceType, resourceId)` identities. Snapshot capture computes
+lowercase SHA-256 hex over UTF-8(label + NUL + text), without a prefix; the `sha256:…` values above are illustrative.
+The DTO validates only that the hash is non-blank. `evidenceCatalog`
 `id` values are run-local opaque references; each item must name the same `snapshotId`, match a manifest entry, and
 hold a quote that is an exact substring of its frozen `passage`. Assessment `targetJobEvidenceIds` must refer to
 `TARGET_JOB` items; candidate `evidenceIds` must refer only to `RESUME` or `EXPERIENCE` items. Unknown IDs and
 cross-snapshot references are invalid. A supported or partially supported assessment must cite candidate evidence;
 `NOT_ESTABLISHED` means the frozen records do not establish the requirement. Each assessment also points to a
 missing-evidence description when it is not fully supported.
+
+Evidence labels, passages and quotes are RAW source text, stored in the fit result and returned verbatim by the
+owner-scoped Fit API. Clients must render them as text or escape them for their output context.
 
 `status` is `SUPPORTED`, `PARTIALLY_SUPPORTED`, or `NOT_ESTABLISHED`; conflicts are separate records containing
 references to at least two candidate source records. An assessment with a conflict cannot be fully supported.
@@ -755,11 +759,13 @@ An assessment citing any member of a declared conflict must link that conflict a
 provider/model/rubric provenance. Optional `providerProbabilities` are finite values from 0 to 1 and do not replace
 the evidence status. Each judgment uses the same set of candidate evidence IDs as its assessment; their order may
 differ. Assessment order controls the legacy quote projection. A judged record's status matches the canonical
-assessment. Every assessment has exactly one judgment. An `UNCHECKED` judgment can only accompany `NOT_ESTABLISHED`.
+assessment. Assessment and judgment requirement IDs are unique, and every assessment has exactly one judgment.
+An `UNCHECKED` judgment can only accompany `NOT_ESTABLISHED`. Judgment `missingEvidence` items are independent
+of the assessment's canonical `missingEvidenceDescription`, which supplies legacy missing-requirement guidance.
 
 `fallbackUsed` and `fallbackReason` disclose generator-judgment fallback use (R13): the reason is non-blank when used,
 and null otherwise. `trace` is a compact user-facing
-decision summary; it does not contain private model reasoning or raw operational logs. The legacy
+decision summary; its producer must exclude private model reasoning and raw operational logs. The DTO does not filter it. The legacy
 `matchedRequirements` list is derived from `SUPPORTED` assessments using their exact quotes. The legacy
 `missingRequirements` list contains every other assessment and its missing-evidence description. This keeps older
 readers useful while canonical clients render requirement statuses and citations. If `agenticMetadata` is absent
